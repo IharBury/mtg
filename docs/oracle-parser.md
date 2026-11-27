@@ -1,6 +1,6 @@
 # Compositional Oracle Parser & Canonical `ToOracle` Printer
 
-`Mtg.Engine.Card` parses official *Magic: The Gathering* Oracle card text through a five-stage compositional pipeline under `Mtg/Engine/Card/Parser/` (9 modules, 14,169 lines) and formats any `CardDef` back into canonical Oracle text purely via `ToOracle` instances—with zero stored raw-text strings and 100% structural `BEq CardDef` round-trip verification across all 981 catalog cards. Catalog Oracle text follows official Gatherer Oracle text; when Scryfall does not match Gatherer, Gatherer is authoritative.
+`Mtg.Engine.Card` parses official *Magic: The Gathering* Oracle card text through a five-stage compositional pipeline under `Mtg/Engine/Card/Parser/` (9 modules, 14,169 lines) and formats any `CardDef` back into canonical Oracle text purely via `ToOracle` instances—with zero stored raw-text strings and 100% structural `BEq CardDef` round-trip verification across all 1,292 catalog cards. Catalog Oracle text follows official Gatherer Oracle text; when Scryfall does not match Gatherer, Gatherer is authoritative.
 
 See [`architecture.md`](./architecture.md) for the overall system map, [`card-and-ability-model.md`](./card-and-ability-model.md) for the AST types produced, and [`game-evaluation.md`](./game-evaluation.md) for how the runtime engine evaluates parsed abilities.
 
@@ -14,7 +14,7 @@ flowchart LR
     S4 --> S5["5. DiscourseBind (Anaphora, Instruction.bind, Reflexive Triggers)"]
 ```
 
-Instead of template or prototype enumeration, the parser uses **deterministic leading-word/prefix dispatch** over quote-aware normalized clauses. Compositional sub-grammars allow $M$ triggers, $K$ conditions, and $N$ instructions to compose in $O(M + K + N)$ grammar rules, including unseen cross-product combinations outside the 981-card catalog.
+Instead of template or prototype enumeration, the parser uses **deterministic leading-word/prefix dispatch** over quote-aware normalized clauses. Compositional sub-grammars allow $M$ triggers, $K$ conditions, and $N$ instructions to compose in $O(M + K + N)$ grammar rules, including unseen cross-product combinations outside the 1,292-card catalog.
 
 ## Module Map
 
@@ -61,7 +61,7 @@ Instead of template or prototype enumeration, the parser uses **deterministic le
 5. **Triggered abilities** (leading `When` / `Whenever` / `At`, or `If <cond>, when/whenever ...` → `parseTriggeredAbilityComp`).
 6. **Keyword lines** (comma/semicolon keyword lists and standalone parameterized keywords, including `Equip` and `Cycling`/`Typecycling` stored directly on `CardDef.keywords` and expanded uniformly via `KeywordAbility.expand`).
 7. **Spell abilities** (instant/sorcery/`SubFace` paragraphs → `SpellAbility`, detaching `"As an additional cost..."` into `SpellAbility.additionalCosts`, `"This spell costs..."` into `StaticAbility.costModifier`, `"This spell can't be countered"` into `StaticAbility.ruleModifying`, and modal `•` bullets into `Instruction.chooseModes`).
-8. **Static abilities** (remaining permanent paragraphs → `StaticAbility`: `Enchant ...`, CDAs, `"As this enters..."`, `"This enters tapped..."`, `"If ... would ..., ... instead"`, continuous characteristic/rule/cost modifiers).
+8. **Static abilities** (remaining permanent paragraphs → `StaticAbility`: `Enchant ...`, CDAs, `"As this enters..."`, `"This enters tapped..."`, `"If ... would ..., ... instead"`, CR 722.2 Station threshold striations `N+ | [P/T] ...`, and continuous characteristic/rule/cost modifiers).
 
 ### Stage 4 — Compositional Sub-Grammars & Recursive Quoted Abilities
 
@@ -89,10 +89,10 @@ Instead of template or prototype enumeration, the parser uses **deterministic le
 
 - **Public parser API ([`ParseOracle.lean`](../Mtg/Engine/Card/ParseOracle.lean))**:
   - [`parseOracleCard`](../Mtg/Engine/Card/ParseOracle.lean#L94-L95) (`@[irreducible, noinline]`): delegates directly to `Parser.parseOracleCardCompositional`.
-  - [`parseOracleCard!`](../Mtg/Engine/Card/ParseOracle.lean#L98-L101) (`@[irreducible, noinline]`): panics with the unrecognized line on failure; used by `Catalog.fromOracle` across all 981 catalog cards.
+  - [`parseOracleCard!`](../Mtg/Engine/Card/ParseOracle.lean#L98-L101) (`@[irreducible, noinline]`): panics with the unrecognized line on failure; used by `Catalog.fromOracle` across all 1,292 catalog cards.
 - **Canonical `ToOracle` rendering**:
   - Every AST type implements `ToOracle` (`PrintCtx → α → String`), and [`CardDef.renderFullOracle`](../Mtg/Engine/Card/CardDef.lean#L824) (re-exported as [`ParseOracle.renderFullOracle`](../Mtg/Engine/Card/ParseOracle.lean#L136-L137)) reconstructs the complete printed card—header, type line, stats, color indicator, keywords, spell/activated/triggered/static abilities, deck-limit override, `//` back face, and `//ADV//` / `//PREP//` sub-faces—purely from structured fields.
 - **Structural `BEq CardDef` round-trip verification**:
   - [`oracleRoundtripDiff`](../Mtg/Engine/Card/ParseOracle.lean#L152-L154) compares `source == parsed` using structural `BEq CardDef`.
-  - [`Mtg/OracleRoundtrip.lean`](../Mtg/OracleRoundtrip.lean) (`lake exe oracle-roundtrip`) checks smoke parses and verifies `parseOracleCard (renderFullOracle c) == .ok c` for all **981** cards in `supportedCatalogCards` in under 2 seconds.
-  - [`Mtg/Engine/Tests/ParseOracle.lean`](../Mtg/Engine/Tests/ParseOracle.lean#L1147-L1347) enforces the full 981-card catalog round-trip at compile time alongside **17** unseen cross-product compositional cards, Stage 1–3 unit `#guard`s, and 10 semantic AST checks covering tricky Stage 4–5 bindings.
+  - [`Mtg/OracleRoundtrip.lean`](../Mtg/OracleRoundtrip.lean) (`lake exe oracle-roundtrip`) checks smoke parses and verifies `parseOracleCard (renderFullOracle c) == .ok c` for all **1,292** cards in `supportedCatalogCards` in under 3 seconds.
+  - [`Mtg/Engine/Tests/ParseOracle.lean`](../Mtg/Engine/Tests/ParseOracle.lean#L1147-L1347) enforces the full 1,292-card catalog round-trip at compile time alongside **17** unseen cross-product compositional cards, Stage 1–3 unit `#guard`s, and 10 semantic AST checks covering tricky Stage 4–5 bindings.

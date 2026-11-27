@@ -10,7 +10,7 @@ All printed cards in the catalog are parsed from their printed Oracle text into 
 | :--- | :--- |
 | **System Overview** *(this document)* | End-to-end architecture, Comprehensive Rules mapping, Lake plugin hierarchy, Lean 4 build/CI invariants, verification gates, and non-goals. |
 | [`card-and-ability-model.md`](./card-and-ability-model.md) | The five-layer `Mtg.Engine.Card` AST: shared CR primitives, pure `Expr` algebra, `TargetSpec` / `CostSpec` / `ManaSpec` / `TokenSpec`, unified `Instruction` & `Effect`, CR 113.3 four-category abilities, `KeywordAbility` expansion, and the 21-field `CardDef`. |
-| [`oracle-parser.md`](./oracle-parser.md) | The 9-module, 5-stage compositional Oracle parser under `Mtg/Engine/Card/Parser/`, recursive quoted-ability parsing, discourse/anaphora binding, canonical `ToOracle` rendering, and 981-card structural `BEq CardDef` round-trip verification. |
+| [`oracle-parser.md`](./oracle-parser.md) | The 9-module, 5-stage compositional Oracle parser under `Mtg/Engine/Card/Parser/`, recursive quoted-ability parsing, discourse/anaphora binding, canonical `ToOracle` rendering, and 1,292-card structural `BEq CardDef` round-trip verification. |
 | [`game-evaluation.md`](./game-evaluation.md) | Runtime evaluation in `Mtg.Engine.Game`, `Agent`, and `Demo`: pure `EvalExpr` & LKI snapshots, CR 613 Layers 1–7d, targeting legality, the resumable `Instruction` interpreter & `stepEnv`, pattern-driven two-pass trigger matching, and unified mana/cost/replacement pipelines. |
 
 ## End-to-End Architecture
@@ -35,8 +35,8 @@ flowchart TD
 
 ### Core Design Principles
 
-1. **Card-Agnostic Card AST & Interpreter, Text-Authored Catalog**: All **981** cards in [`supportedCatalogCards`](../Mtg/Engine/Catalog/Supported.lean#L20-L28) (`13` core + `193` Hobbit + `117` Hobbit Eternal + `286` Marvel Super Heroes + `285` Reality Fracture + `87` Reality Fracture Commander) are authored from official Gatherer Oracle text via `fromOracle` with `modellingError? == none` (when Scryfall does not match Gatherer, Gatherer is authoritative). Both the `Mtg.Engine.Card` AST and the unified `Instruction` interpreter are card-agnostic (zero card- or set-named AST constructors); interactive mid-resolution prompts in [`ResolutionChoice`](../Mtg/Engine/Game/Pending.lean#L325-L622) (dispatched in [`answerResolutionChoice`](../Mtg/Engine/Game/ResolutionChoices.lean#L258)) still retain card-specific prompt constructors.
-2. **Bidirectional `ToOracle` With Zero Raw-Text Escape Hatches**: No AST type in `Mtg/Engine/Card/` caches printed Oracle strings (no `.printed : String`, `Effect.phrase`, or `TargetFilter.noun`). [`CardDef.renderFullOracle`](../Mtg/Engine/Card/CardDef.lean#L824) reconstructs printed Oracle text purely from `ToOracle` instances, and `parseOracleCard (renderFullOracle c) == .ok c` holds structurally via `BEq CardDef` across all 981 catalog cards.
+1. **Card-Agnostic Card AST & Interpreter, Text-Authored Catalog**: All **1,292** cards in [`supportedCatalogCards`](../Mtg/Engine/Catalog/Supported.lean#L21-L30) (`13` core + `193` Hobbit + `117` Hobbit Eternal + `286` Marvel Super Heroes + `285` Reality Fracture + `87` Reality Fracture Commander + `311` Star Trek) are authored from official Gatherer Oracle text via `fromOracle` with `modellingError? == none` (when Scryfall does not match Gatherer, Gatherer is authoritative). Both the `Mtg.Engine.Card` AST and the unified `Instruction` interpreter are card-agnostic (zero card- or set-named AST constructors); interactive mid-resolution prompts in [`ResolutionChoice`](../Mtg/Engine/Game/Pending.lean#L325-L622) (dispatched in [`answerResolutionChoice`](../Mtg/Engine/Game/ResolutionChoices.lean#L258)) still retain card-specific prompt constructors.
+2. **Bidirectional `ToOracle` With Zero Raw-Text Escape Hatches**: No AST type in `Mtg/Engine/Card/` caches printed Oracle strings (no `.printed : String`, `Effect.phrase`, or `TargetFilter.noun`). [`CardDef.renderFullOracle`](../Mtg/Engine/Card/CardDef.lean#L824) reconstructs printed Oracle text purely from `ToOracle` instances, and `parseOracleCard (renderFullOracle c) == .ok c` holds structurally via `BEq CardDef` across all 1,292 catalog cards.
 3. **Pure Queries, Unified Effects, and `RulesEvent`-Backed History**: Queries (`Expr.lean`) are side-effect-free functions over `(Game, EvalEnv)`. All one-shot effects across spells, activated abilities, triggered abilities, and Saga chapters share a single 18-constructor [`Instruction`](../Mtg/Engine/Card/Ability.lean#L1257-L1278) AST executed by one resumable interpreter ([`Game/Interpreter.lean`](../Mtg/Engine/Game/Interpreter.lean)), reading post-replacement outcomes from `Game.events` (`RulesEvent`) slices per CR 614.6.
 4. **Universal Layer Participation**: Every ability on a permanent or spell—`keywords`, `activatedAbilities`, `triggeredAbilities`, `staticAbilities`, `spellEffect`, and `SpellAbility.additionalCosts`—transforms functorially under Layer 3 text changes (`HasTextChange`), obeys Layer 4 CR 305.6/305.7 basic-land subtype rules, and respects Layer 6 grants and removals.
 
@@ -65,25 +65,25 @@ Every type, parser production, and runtime rule follows the **6 November 2026** 
 | Library / Executable | Precompiled (`precompileModules`) | `leanc` Optimization | Contents & Role |
 | :--- | :---: | :--- | :--- |
 | `Mtg.Engine.Card` | `true` | `-O1 -mllvm -regalloc=fast` *(package default)* | `Card.lean`, `Card/*` (32 files, 32,999 lines incl. 9-module `Card/Parser/`), `Color`, `Mana`, `Turn`, `TypeLine`, `Zone`. Strictly acyclic below `Game` and `Catalog`; never imports `Game`, `Catalog`, or `Tests`. |
-| `Mtg.Engine.Catalog` | `false` *(interpreted)* | — | 7 catalog modules (`Catalog.lean` + 5 set catalogs + `Supported.lean`). Kept un-precompiled so downstream `lake` jobs do not reload a shared initializer that re-parses all 981 cards; `parseOracleCard!` itself executes at native `-O1` speed via the `Mtg.Engine.Card` plugin. |
+| `Mtg.Engine.Catalog` | `false` *(interpreted)* | — | 8 catalog modules (`Catalog.lean` + 6 set catalogs + `Supported.lean`). Kept un-precompiled so downstream `lake` jobs do not reload a shared initializer that re-parses all 1,292 cards; `parseOracleCard!` itself executes at native `-O1` speed via the `Mtg.Engine.Card` plugin. |
 | `Mtg.Engine.Game` | `true` | `-O0` *(library override)* | `Game.lean`, `Game/*` (54 files, 69,181 lines), `Deck`, `Rng`, `Rules`. Overridden to `-O0` ([`lakefile.toml#L37-L44`](../lakefile.toml#L37-L44)) because `Mtg.Engine.Game` emits tens of megabytes of generated C (`Core.c`, `Event.c`, `Decisions.c`, `ResolutionChoices.c`) on the serial critical path, cutting C compilation ~10× (~4 min saved on CI) while keeping `Mtg.Engine.Card` at `-O1`. |
 | `Mtg.Engine.Fixture` | `true` | `-O1 -mllvm -regalloc=fast` | Reusable opening hands and prebuilt test game states, loaded once by downstream `#guard` suites. |
-| `Mtg.Engine` | `false` | — | Top-level library tying together `Agent`, `OracleData`, `OracleRulings`, `Tests.lean`, `Tests/*` (104 files, including `Tests/Builders/`, `Tests/CardGuards.lean`, and `Tests/CatalogHobbitGuards.lean`), and oracle ruling test modules. Neither `Card/`, `Game/`, nor `Catalog/` imports `Tests/`. |
+| `Mtg.Engine` | `false` | — | Top-level library tying together `Agent`, `OracleData`, `OracleRulings`, `Tests.lean`, `Tests/*` (105 files, including `Tests/Builders/`, `Tests/CardGuards.lean`, `Tests/CatalogHobbitGuards.lean`, and `Tests/StarTrek.lean`), and oracle ruling test modules. Neither `Card/`, `Game/`, nor `Catalog/` imports `Tests/`. |
 | `MtgDemo` / `mtg-demo` | `false` | — | Console demo, text renderer (`Mtg/Demo/Render.lean`), Welcome Decks, deck-list parser, and 534 render `#guard`s (`Mtg/Demo/RenderTests.lean`). |
-| `oracle-roundtrip` | — | — | [`Mtg/OracleRoundtrip.lean`](../Mtg/OracleRoundtrip.lean) executable verifying smoke parses and structural `BEq CardDef` round-trips across all 981 catalog cards. |
+| `oracle-roundtrip` | — | — | [`Mtg/OracleRoundtrip.lean`](../Mtg/OracleRoundtrip.lean) executable verifying smoke parses and structural `BEq CardDef` round-trips across all 1,292 catalog cards. |
 
 ## Lean 4 Engineering Invariants
 
 1. **C-Runtime Constructor Tag Headroom (`LeanMaxCtorTag = 243`)**:
    - Lean 4's C runtime stores an allocated constructor's 0-indexed ordinal (`ctorIdx`) in an 8-bit `m_tag` capped at `243` (`244..255` are reserved for runtime tags such as closures and arrays).
-   - Every `inductive` in `Mtg/Engine/Card/` (**135 total**: 133 AST inductives including closed vocabulary enum `CounterKind` at 33 constructors, plus 2 parser helpers `MechanicLabel` at 9 and `NounQuantifier` at 7) stays **`< 40` constructors** (`< 17%` of `243`). The largest `Card/` inductive is `ObjectPred` (39 constructors); every inductive in [`Ability.lean`](../Mtg/Engine/Card/Ability.lean) is `≤ 20` constructors (`StaticReplacementSpec` 20, `Instruction` 18, `ContinuousModification` 17, `PlayerOp` 16, `StaticCombatRule` 16, `StaticPlayerRule` 14, `StaticAbility` 6); [`TriggerPattern.lean`](../Mtg/Engine/Card/TriggerPattern.lean) stays `≤ 27`.
+   - Every `inductive` in `Mtg/Engine/Card/` (**135 total**: 133 AST inductives including closed vocabulary enum `CounterKind` at 35 constructors, plus 2 parser helpers `MechanicLabel` at 9 and `NounQuantifier` at 7) stays **`< 40` constructors** (`< 17%` of `243`). The largest `Card/` inductive is `ObjectPred` (39 constructors); every inductive in [`Ability.lean`](../Mtg/Engine/Card/Ability.lean) is `≤ 24` constructors (`StaticReplacementSpec` 24, `Instruction` 18, `ContinuousModification` 17, `PlayerOp` 17, `StaticCombatRule` 17, `StaticPlayerRule` 17, `StaticAbility` 6); [`TriggerPattern.lean`](../Mtg/Engine/Card/TriggerPattern.lean) stays `≤ 27`.
 2. **Mutual `BEq` / `Repr` Single-Tuple Projection & Nested Recursion Discipline**:
    - Large mutual AST blocks (`PlayerFilter`..`ValueExpr` in [`Expr.lean`](../Mtg/Engine/Card/Expr.lean#L696-L720), `CostItem`..`CostSpec` in [`Cost.lean`](../Mtg/Engine/Card/Cost.lean#L205-L208), `GrantedAbility`..`StaticAbility` in [`Ability.lean`](../Mtg/Engine/Card/Ability.lean#L1376-L1408), and `PendingReplacement`..`GameEvent` in [`Game/Event.lean`](../Mtg/Engine/Game/Event.lean#L1960-L1966)) derive `BEq`/`Repr` **once** for the mutual tuple and project per-type instances rather than duplicating generated C code per type.
    - Structural recursion over nested containers (`Array Instruction`, `Array ObjectPred`, `Array Condition`, `Option CardDef`) uses explicit `mutual` blocks or `Array.attach` / `List.attach`, avoiding implicit well-founded splitters over wide enums.
    - [`CardDef`](../Mtg/Engine/Card/CardDef.lean#L161-L187) defines an explicit structural `BEq CardDef` recursing over `otherFace : Option CardDef` without `maxRecDepth` overrides.
 3. **Parser Throughput Barriers**:
    - Parser entry points (`parseOracleCard` / `parseOracleCard!` in [`ParseOracle.lean`](../Mtg/Engine/Card/ParseOracle.lean#L94-L101)) and [`supportedCatalogCards`](../Mtg/Engine/Catalog/Supported.lean#L20) are marked `@[irreducible, noinline]`.
-   - Text normalization in [`OracleNorm.lean`](../Mtg/Engine/Card/OracleNorm.lean#L291-L318) operates linearly over `Array Char`, and Stage 3–4 parsing uses deterministic leading-word/prefix dispatch so all 981 catalog round-trips execute in under 2 seconds.
+   - Text normalization in [`OracleNorm.lean`](../Mtg/Engine/Card/OracleNorm.lean#L291-L318) operates linearly over `Array Char`, and Stage 3–4 parsing uses deterministic leading-word/prefix dispatch so all 1,292 catalog round-trips execute in under 3 seconds.
 
 ## Verification Gates
 
@@ -93,17 +93,17 @@ Every change is verified against three gates:
    ```sh
    LEAN_ABORT_ON_PANIC=1 bash scripts/ci-lake-build.sh --wfail
    ```
-   [`scripts/ci-lake-build.sh`](../scripts/ci-lake-build.sh) fails on any warning (`--wfail`) and aborts or rejects any runtime `PANIC at` diagnostic—including cached replays—covering all **10,608** start-of-line `#guard` assertions across `Mtg/`:
-   - `Mtg/Engine/Tests/*` (104 files): **7,056** `#guard`s
-   - Top-level test modules imported via the [`OracleRulings.lean`](../Mtg/Engine/OracleRulings.lean) facade (21 test modules): **1,769** `#guard`s total—comprising the ruling suites (`OracleRulingTests.lean`, `MshOracleTests*.lean`, `FraOracleTests*.lean`, `FrcOracleTests.lean`, checking the **1,057**-entry [`uniqueOracleRulingCount`](../Mtg/Engine/OracleData.lean#L3228) table in `OracleData.lean`) alongside the card and model test modules (`FraCardTests*.lean`, `CatalogModelTests.lean`)
-   - `Mtg/Demo/Check0.lean`–`Check9.lean`: **775** `#guard`s
-   - `Mtg/Demo/RenderTests.lean`: **534** `#guard`s
-   - In-module `#guard`s across `Mtg/Engine/Card/` (**169**) and remaining engine/demo modules (`TypeLine.lean`, `Catalog.lean`, `Mana.lean`, `OracleData.lean`, `Demo/DeckList.lean`, `Demo/WelcomeDecks.lean`, etc.): **474** `#guard`s
+   [`scripts/ci-lake-build.sh`](../scripts/ci-lake-build.sh) fails on any warning (`--wfail`) and aborts or rejects any runtime `PANIC at` diagnostic—including cached replays—covering all start-of-line `#guard` assertions across `Mtg/`:
+   - `Mtg/Engine/Tests/*` (105 files, incl. `StarTrek.lean`)
+   - Top-level test modules imported via the [`OracleRulings.lean`](../Mtg/Engine/OracleRulings.lean) facade (21 test modules)—comprising the ruling suites (`OracleRulingTests.lean`, `MshOracleTests*.lean`, `FraOracleTests*.lean`, `FrcOracleTests.lean`, checking the **1,057**-entry [`uniqueOracleRulingCount`](../Mtg/Engine/OracleData.lean#L3228) table in `OracleData.lean`) alongside the card and model test modules (`FraCardTests*.lean`, `CatalogModelTests.lean`)
+   - `Mtg/Demo/Check0.lean`–`Check9.lean`
+   - `Mtg/Demo/RenderTests.lean`
+   - In-module `#guard`s across `Mtg/Engine/Card/` and remaining engine/demo modules (`TypeLine.lean`, `Catalog.lean`, `Catalog/StarTrek.lean`, `Mana.lean`, `OracleData.lean`, `Demo/DeckList.lean`, `Demo/WelcomeDecks.lean`, etc.)
 2. **Full-Catalog Structural Round-Trip Verification**:
    ```sh
    lake exe oracle-roundtrip
    ```
-   Verifies smoke parses and structural `parseOracleCard (renderFullOracle c) == .ok c` across all **981** catalog cards (`catalog 981 roundtrip_fails 0 fails 0`).
+   Verifies smoke parses and structural `parseOracleCard (renderFullOracle c) == .ok c` across all **1,292** catalog cards (`catalog 1292 roundtrip_fails 0 fails 0`).
 3. **Demo Session Replay Checks**:
    ```sh
    for f in examples/*.txt; do lake exe mtg-demo -- --check --input "$f"; done

@@ -116,6 +116,14 @@ def destroyPermanent (g : Game) (o : GameObject)
         affectedPlayer := affected
         kind := .shieldCounterDestroy o.id
       }
+    if let some k := g.saveFromDestroyCounterKind? o then
+      s := s.push {
+        id := { kind := .saveFromDestroyRemoveCounters k, object := some o.id }
+        source := some o.id
+        controller := ctrl
+        affectedPlayer := affected
+        kind := .saveFromDestroyRemoveCounters o.id k
+      }
     for (_, eff) in g.activeEffects do
       match eff with
       | .replacement spec d =>
@@ -123,6 +131,9 @@ def destroyPermanent (g : Game) (o : GameObject)
           match spec.kind with
           | .shieldCounterDestroy tid =>
             if tid == o.id && o.status.shield > 0 then
+              s := s.push { spec with affectedPlayer := affected }
+          | .saveFromDestroyRemoveCounters tid k =>
+            if tid == o.id && o.status.counterCount k > 0 then
               s := s.push { spec with affectedPlayer := affected }
           | _ => pure ()
       | _ => pure ()
@@ -137,9 +148,20 @@ def destroyPermanent (g : Game) (o : GameObject)
     let cause' := g.wrapReplacedCause chosen.id cause ctrl
     let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := ctrl)
     let oName := g.name o
-    let g := g.recordRemoveCounters o.id .shield 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
+    let (remKind, remAll, healDmg, remMsg) : CounterKind × Bool × Bool × String :=
+      match chosen.id.kind with
+      | .saveFromDestroyRemoveCounters k =>
+        (k, true, true, s!"All {k.oracleName} counters are removed from {oName} and all damage is healed instead of destroying it")
+      | _ =>
+        (.shield, false, false, s!"A shield counter is removed from {oName} instead of destroying it")
+    let remAmt := if remAll then o.status.counterCount remKind else 1
+    let g := g.recordRemoveCounters o.id remKind remAmt (byPlayer := ctrl) (noActor := ctrl.isNone)
       (cause := some finalCause) (deferPlayFromExileLogs := deferPlayFromExileLogs)
-    g.logMsg s!"A shield counter is removed from {oName} instead of destroying it"
+    let g :=
+      if healDmg then
+        g.record (GameEvent.damageMarkedCleared g.turnNumber #[o.id] (cause := finalCause))
+      else g
+    g.logMsg remMsg
   | .none =>
     g.moveToOwnerGraveyard o (reason.getD s!"{g.name o} is destroyed") (verb := some .destroy)
       (preBattlefield := preBattlefield) (cause := cause)
@@ -1096,7 +1118,7 @@ partial def checkSBACounted (g : Game)
               if team.size ≤ 1 then 10 else 10 + 5 * (team.size - 1)
             let poisonLoss := g.teamPoison pl.id ≥ poisonThreshold
             let loss? : Option (LossReason × StateBasedAction) :=
-              if curPl.life ≤ 0 then some (.lifeZeroOrLess, .lifeZeroOrLess)
+              if curPl.life ≤ 0 && !g.dontLoseForZeroLife pl.id then some (.lifeZeroOrLess, .lifeZeroOrLess)
               else if g.drewFromEmpty pl.id then some (.decked, .drewFromEmpty)
               else if poisonLoss then some (.poison, .tenPoison)
               else none

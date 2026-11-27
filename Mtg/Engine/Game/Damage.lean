@@ -315,7 +315,8 @@ def replaceDamage (g : Game) (n : Int)
                 | .protectionPreventDamage tid sid =>
                   recipientPerm?.any (·.id == tid) &&
                     effSrc?.any (fun s => s.id != noSourceSentinelId && s.id == sid)
-                | .protectionFromEverythingPlayer pid =>
+                | .protectionFromEverythingPlayer pid
+                | .preventAllDamageToPlayer pid =>
                   recipientPlayer? == some pid
                 | .shieldCounterPreventDamage tid =>
                   recipientPerm?.any (fun o => o.id == tid && (o.status.shield > 0 || alreadyRemovedShield)) &&

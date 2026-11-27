@@ -44,6 +44,8 @@ structure DiscourseCtx where
   attachedHostCtx : Bool := false
   triggerPlayerRole? : Option PlayerExpr := none
   lastRevealUntilPred? : Option ObjectPred := none
+  lastActionWasLife : Bool := false
+  lastCounterKind? : Option CounterKind := none
 deriving Repr, Inhabited
 
 namespace DiscourseCtx
@@ -72,7 +74,7 @@ def pushTargetSlot (ctx : DiscourseCtx) (slot : TargetSlot) : Nat × DiscourseCt
 may reference via `"this way"` / `"that many"` / `"those cards"`. -/
 def allocVar (ctx : DiscourseCtx) : VarId × DiscourseCtx :=
   let v : VarId := ⟨ctx.nextVarIdx⟩
-  (v, { ctx with lastActionVar? := some v, lastRevealUntilPred? := none, nextVarIdx := ctx.nextVarIdx + 1 })
+  (v, { ctx with lastActionVar? := some v, lastRevealUntilPred? := none, lastActionWasLife := false, nextVarIdx := ctx.nextVarIdx + 1 })
 
 /-- Allocate a fresh lexical `VarId` for a `forEach` loop variable without overwriting
 `lastActionVar?` from an earlier antecedent step (e.g. *Worlds Within Worlds*). -/
@@ -95,7 +97,7 @@ def isSelfPhrase (phrase : String) : Bool :=
   | "this" | "this permanent" | "this creature" | "this artifact" | "this enchantment"
   | "this equipment" | "this aura" | "this land" | "this planeswalker" | "this card"
   | "this spell" | "this saga" | "this token" | "this tokens" | "this vehicle"
-  | "this emblem" => true
+  | "this spacecraft" | "this emblem" => true
   | _ => false
 
 /-- Resolve an object anaphor (`"it"`, `"them"`, `"that creature"`, `"those cards"`,
@@ -136,7 +138,11 @@ def resolveObjectAnaphor? (ctx : DiscourseCtx) (phrase : String) : Option Object
       match ctx.lastSubject? with
       | some subj => some subj
       | none => if ctx.isTrigger then some .triggerSubject else none
-  else if (l == "that permanent" || ((l == "that land" || l == "that object") && !ctx.isSelfTrigger)) && ctx.isTrigger && ctx.lastSubject?.isNone then
+  else if ((l == "that permanent" || ((l == "that land" || l == "that object") && !ctx.isSelfTrigger)) &&
+        ctx.isTrigger && ctx.lastSubject?.isNone) ||
+      ((l == "that permanent" || l == "that creature" || l == "that artifact" ||
+        l == "that enchantment" || l == "that land" || l == "that spell" || l == "that object") &&
+        ctx.isTrigger && !ctx.isSelfTrigger && !ctx.attachedHostCtx && ctx.lastSubject? == some .this) then
     some .triggerSubject
   else if l == "it" || l == "them" || l == "they" ||
       l == "that object" || l == "that creature" || l == "that permanent" ||
@@ -485,6 +491,21 @@ partial def substValueX (xVal : ValueExpr) : ValueExpr → ValueExpr
   | .binary op a b => .binary op (substValueX xVal a) (substValueX xVal b)
   | other => other
 
+/-- Replace `ValueExpr.chosenX` with `xVal` inside a `ContinuousModification`. -/
+partial def substXContinuousMod (xVal : ValueExpr) : ContinuousModification → ContinuousModification
+  | .modifyPT p t => .modifyPT (substValueX xVal p) (substValueX xVal t)
+  | .setBasePT p? t? => .setBasePT (p?.map (substValueX xVal)) (t?.map (substValueX xVal))
+  | .all ms => .all (ms.map (substXContinuousMod xVal))
+  | other => other
+
+/-- Replace `ValueExpr.chosenX` with `xVal` inside a `Condition`. -/
+partial def substCondX (xVal : ValueExpr) : Condition → Condition
+  | .cmp op a b => .cmp op (substValueX xVal a) (substValueX xVal b)
+  | .not c => .not (substCondX xVal c)
+  | .all cs => .all (cs.map (substCondX xVal))
+  | .any cs => .any (cs.map (substCondX xVal))
+  | other => other
+
 /-- Replace `ValueExpr.chosenX` with `xVal` across top-level value slots of an `Instruction`
 (used when binding trailing `", where X is <ValueExpr>"` clauses). -/
 partial def substInstrX (xVal : ValueExpr) : Instruction → Instruction
@@ -497,6 +518,7 @@ partial def substInstrX (xVal : ValueExpr) : Instruction → Instruction
   | .player (.surveil who amt) => .player (.surveil who (substValueX xVal amt))
   | .player (.amass who sub amt) => .player (.amass who sub (substValueX xVal amt))
   | .player (.empowerPlaneswalker sub amt) => .player (.empowerPlaneswalker sub (substValueX xVal amt))
+  | .player (.discover who amt) => .player (.discover who (substValueX xVal amt))
   | .player (.proliferate who amt tgt?) => .player (.proliferate who (substValueX xVal amt) tgt?)
   | .create (.tokens who cnt spec mods) =>
     let spec' :=
@@ -510,18 +532,17 @@ partial def substInstrX (xVal : ValueExpr) : Instruction → Instruction
     .create (.tokens who (substValueX xVal cnt) spec' mods')
   | .permanent (.modifyCounters (.put k v) o ch?) =>
     .permanent (.modifyCounters (.put k (substValueX xVal v)) o ch?)
+  | .permanent (.modifyCounters (.distribute k v) o ch?) =>
+    .permanent (.modifyCounters (.distribute k (substValueX xVal v)) o ch?)
   | .moveZone (.topOfLibrary who cnt) dest verb mods =>
     .moveZone (.topOfLibrary who (substValueX xVal cnt)) dest verb mods
-  | .installEffect (.applyContinuous dur aff (.modifyPT p t)) =>
-    .installEffect (.applyContinuous dur aff (.modifyPT (substValueX xVal p) (substValueX xVal t)))
-  | .installEffect (.applyContinuous dur aff (.all ms)) =>
-    let ms' := ms.map fun
-      | .modifyPT p t => .modifyPT (substValueX xVal p) (substValueX xVal t)
-      | other => other
-    .installEffect (.applyContinuous dur aff (.all ms'))
+  | .stack (.copyStackObject o cnt nt) =>
+    .stack (.copyStackObject o (substValueX xVal cnt) nt)
+  | .installEffect (.applyContinuous dur aff cm) =>
+    .installEffect (.applyContinuous dur aff (substXContinuousMod xVal cm))
   | .seq xs => .seq (xs.map (substInstrX xVal))
   | .bind v s c => .bind v (substInstrX xVal s) (substInstrX xVal c)
-  | .ifCond c t e => .ifCond c (substInstrX xVal t) (substInstrX xVal e)
+  | .ifCond c t e => .ifCond (substCondX xVal c) (substInstrX xVal t) (substInstrX xVal e)
   | .optional w cost? y n m => .optional w cost? (substInstrX xVal y) (substInstrX xVal n) m
   | .unlessPays p cost u => .unlessPays p cost (substInstrX xVal u)
   | .forEach it v b => .forEach it v (substInstrX xVal b)
@@ -733,6 +754,8 @@ private partial def normalizeBoundVarsAux (depth : Nat) (env : List (VarId × Va
       | .modifyCounters m o ch? =>
         let m' := match m with
           | .put k c => .put k (mapValVars env c)
+          | .distribute k c => .distribute k (mapValVars env c)
+          | .putAnotherOfChosen => .putAnotherOfChosen
           | .remove k? c => .remove k? (mapCountRangeVars env c)
           | .moveAll s k? => .moveAll (mapValVars.mapObjVars env s) k?
           | .moveOne s k => .moveOne (mapValVars.mapObjVars env s) k
@@ -744,7 +767,8 @@ private partial def normalizeBoundVarsAux (depth : Nat) (env : List (VarId × Va
       | .transform o => .transform (mapValVars.mapObjVars env o)
       | .turnFaceUp o => .turnFaceUp (mapValVars.mapObjVars env o)
       | .phaseOut o p? => .phaseOut (mapValVars.mapObjVars env o) (p?.map (mapValVars.mapPlVars env))
-      | .setDesignation o tag v => .setDesignation (mapValVars.mapObjVars env o) tag v)
+      | .setDesignation o tag v => .setDesignation (mapValVars.mapObjVars env o) tag v
+      | .assimilate o ch? => .assimilate (mapValVars.mapObjVars env o) (ch?.map (mapChoiceVars env)))
   | .damage op =>
     if env.isEmpty then .damage op
     else .damage (match op with
@@ -776,6 +800,7 @@ private partial def normalizeBoundVarsAux (depth : Nat) (env : List (VarId × Va
       | .amass p s v => .amass (mapValVars.mapPlVars env p) s (mapValVars env v)
       | .connive o => .connive (mapValVars.mapObjVars env o)
       | .empowerPlaneswalker s v => .empowerPlaneswalker s (mapValVars env v)
+      | .discover p v => .discover (mapValVars.mapPlVars env p) (mapValVars env v)
       | .setStatus p k c? => .setStatus (mapValVars.mapPlVars env p) k (c?.map (mapCondVars env))
       | .choose p k => .choose (mapValVars.mapPlVars env p) k
       | .inspectLibrary sp =>

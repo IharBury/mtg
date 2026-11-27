@@ -367,10 +367,21 @@ def expand : KeywordAbility → ExpandedKeyword
   -- CR 702.122a: Crew N (activated ability)
   | .crew power =>
     { activatedAbilities := #[ActivatedAbility.crewAbility power] }
+  -- CR 702.184a: Station (sorcery-speed activated ability)
+  | .simple .station =>
+    { activatedAbilities := #[ActivatedAbility.stationAbility] }
+  -- CR 702.196a: Beam me up [cost] (graveyard alternative cost + leave-stack exile replacement)
+  | .beamMeUp cost =>
+    { alternativeCosts := #[{
+        cost := CostSpec.beamMeUpFullCost cost
+        fromZones := #[.graveyard]
+        keywordTag? := some .beamMeUp }]
+      staticAbilities := #[
+        .replacement (some (.castPred (.beamMeUpPaid .this))) .exileOnLeaveStack] }
   -- CR 702.194a: Teamwork N (optional additional cost)
   | .teamwork count =>
     { additionalCosts := #[AdditionalCostSpec.opt (CostSpec.teamworkCost count) (some .teamwork)] }
-  -- Evergreen combat / evasion / targeting / cast-timing / mana-assist keywords
+  -- Evergreen combat / evasion / targeting / cast-timing / mana-assist / sunburst keywords
   -- are evaluated directly from `CardDef.keywords` / `effectiveKeywords`.
   | _ => {}
 
@@ -396,8 +407,12 @@ end KeywordAbility
   some (.castPred (.giftPromised .this))
 #guard (KeywordAbility.expand (.gift .treasure)).spellInstructions.size == 1
 #guard (KeywordAbility.expand (.crew 3)).activatedAbilities.size == 1
+#guard (KeywordAbility.expand (.simple .station)).activatedAbilities.size == 1
 #guard (KeywordAbility.expand (.flashback (CostSpec.ofGeneric 2))).staticAbilities ==
   #[.replacement (some (.castPred (.castFrom .graveyard .this))) .exileOnLeaveStack]
+#guard (KeywordAbility.expand (.beamMeUp (CostSpec.ofGeneric 2))).alternativeCosts[0]!.fromZones == #[.graveyard]
+#guard (KeywordAbility.expand (.beamMeUp (CostSpec.ofGeneric 2))).staticAbilities ==
+  #[.replacement (some (.castPred (.beamMeUpPaid .this))) .exileOnLeaveStack]
 #guard (KeywordAbility.expand (.sneak (CostSpec.ofGeneric 1))).alternativeCosts[0]!.condition? ==
   some (.duringStep .declareBlockers)
 #guard (KeywordAbility.expandAll #[.ward (CostSpec.ofGeneric 2), .ward CostSpec.discardCard]).triggeredAbilities.size == 2

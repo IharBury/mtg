@@ -19,7 +19,11 @@ def canBeTargetedBy (g : Game) (caster : PlayerId) (o : GameObject)
   let src? := g.targetingSourceObject? sourceId
   let srcBlocked :=
     match src? with
-    | some src => g.protectedFrom o src
+    | some src =>
+      let isAb :=
+        src.abilityEffect.isSome || src.triggeredAbility.isSome || src.isReflexive ||
+          src.zone != .stack
+      g.protectedFrom o src || g.cantBeTargetedBySource o src caster isAb
     | none => (g.effectiveKeywords o).contains (.protection .everything)
   (!g.hasHexproofFrom o src? || g.controlledBy o caster ||
       (g.controllerOf o).any (g.areTeammates · caster)) && !srcBlocked

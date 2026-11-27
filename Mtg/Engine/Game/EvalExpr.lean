@@ -289,6 +289,10 @@ def viewChosenAnchor? : ObjectView → Option String
   | .live o => o.status.chosenAnchor
   | .lki eo => eo.chosenAnchor
 
+def viewChosenNumber? : ObjectView → Option Int
+  | .live o => o.status.chosenNumber
+  | .lki eo => eo.chosenNumber
+
 def viewCounterCount (v : ObjectView) (kind? : Option CounterKind) : Nat :=
   let bag : CounterBag :=
     match v with
@@ -455,6 +459,9 @@ def evalPlayerMetricSingle (g : Game) (env : EvalEnv) (m : PlayerMetric) (p : Pl
     Int.ofNat (pl.graveyard.filter (fun id => (st.findObject? id).any Game.isDiscardableCard)).size
   | .landsPlayedThisTurn => Int.ofNat (GameEvent.landsPlayed st.events st.turnNumber p)
   | .spellsCastThisTurn => Int.ofNat (GameEvent.spellsCast st.events st.turnNumber p)
+  | .dilemmasFacedThisTurn => Int.ofNat (GameEvent.dilemmasFaced st.events st.turnNumber p)
+  | .spellsCastThisGame => Int.ofNat (GameEvent.spellsCastThisGame st.events p)
+  | .extraTurnsBegunThisGame => Int.ofNat (GameEvent.extraTurnsBegunThisGame st.events p)
   | .cardsDrawnThisTurn => Int.ofNat (GameEvent.draws st.events st.turnNumber p)
   | .cardsDiscardedThisTurn =>
     Int.ofNat (st.events.foldl (fun n e =>
@@ -1133,15 +1140,27 @@ partial def evalObjects (g : Game) (env : EvalEnv) (expr : ObjectExpr) : Array O
     if !env.costPaidObjects.isEmpty then
       dedupViews (env.costPaidObjects.filterMap (resolveObjectView? g env))
     else
-      match env.sourceId with
-      | none => #[]
-      | some sid =>
-        let spellId := GameEvent.stackSpellIdOf st.events sid
+      let matchIds : Array ObjectId := Id.run do
+        let mut ms : Array ObjectId := #[]
+        if let some sid := env.sourceId then
+          ms := pushUnique ms sid
+          ms := pushUnique ms (GameEvent.stackSpellIdOf st.events sid)
+        if let some aid := st.resolvingAbility then
+          ms := pushUnique ms aid
+        return ms
+      if matchIds.isEmpty then #[]
+      else
         let ids : Array ObjectId := st.events.foldl (fun acc e =>
           match e.cause?, e.change with
           | some (.costPayment _ _ (some forObj)), .rules (.zone (.moved before after ..)) =>
-            if forObj == sid || forObj == spellId then
+            if matchIds.contains forObj then
               match after.id.orElse (fun _ => before.id) with
+              | some oid => pushUnique acc oid
+              | none => acc
+            else acc
+          | some (.costPayment .tap _ (some forObj)), .rules (.permanent (.tapped eo _)) =>
+            if matchIds.contains forObj then
+              match eo.id with
               | some oid => pushUnique acc oid
               | none => acc
             else acc
@@ -1174,6 +1193,8 @@ partial def evalValue (g : Game) (env : EvalEnv) (expr : ValueExpr) : Int :=
   match expr with
   | .const n => n
   | .chosenX => Int.ofNat env.chosenX
+  | .chosenNumberOnSource =>
+    ((resolveRefViews g env .this)[0]?.bind viewChosenNumber?).getD 0
   | .eventAmount => env.eventAmount
   | .objectStat kind objExpr =>
     match (evalObjects g env objExpr)[0]? with
@@ -1185,12 +1206,18 @@ partial def evalValue (g : Game) (env : EvalEnv) (expr : ValueExpr) : Int :=
     | none => 0
   | .aggregate op metric objsExpr =>
     let views := evalObjects g env objsExpr
-    match op with
-    | .count => Int.ofNat views.size
-    | .sum | .max | .min | .countDistinct =>
+    match op, metric with
+    | .count, _ => Int.ofNat views.size
+    | .countDistinct, .name =>
+      let uniq := views.foldl (fun acc v =>
+        let nm := viewName st v
+        if nm.isEmpty || acc.contains nm then acc else acc.push nm) (#[] : Array String)
+      Int.ofNat uniq.size
+    | _, _ =>
       let vals : Array Int := views.filterMap fun v =>
         match metric with
         | .one => some 1
+        | .name => if (viewName st v).isEmpty then none else some 1
         | .stat sk => viewStat? st v sk
         | .counterCount k? => some (Int.ofNat (viewCounterCount v k?))
         | .colorCount => some (Int.ofNat (viewColors st v).count)
@@ -1315,6 +1342,12 @@ def evalCastPred (g : Game) (env : EvalEnv) (pred : CastContextPred) : Bool :=
          | some prop => prop.spellId == oid && prop.teamworkPaid
          | none => false)
   | .sneakPaid ref => evalObj ref fun oid => (GameEvent.sneakAttackTarget? st.events oid).isSome
+  | .beamMeUpPaid ref =>
+    evalObj ref fun oid =>
+      GameEvent.beamMeUpPaid st.events oid ||
+        (match st.proposedSpell with
+         | some prop => prop.spellId == oid && prop.beamMeUpCreature.isSome
+         | none => false)
   | .castFrom zk ref =>
     (resolveRefViews g env ref).any fun v =>
       match v.id? with
@@ -1408,6 +1441,22 @@ def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
             matchesOwnerOrCtrl before.controller &&
             evalObjectPred g { env with eventIdx? := some i } (.lki before) pred
         | _ => false
+    | .permanentReturnedToHand pred =>
+      anyEventOnTurn fun i e =>
+        match e.change with
+        | .rules (.zone (.moved before _ .battlefield (.hand _) _ _ _ _)) =>
+          !before.phasedOut && matchesOwnerOrCtrl before.controller &&
+            evalObjectPred g { env with eventIdx? := some i } (.lki before) pred
+        | _ => false
+    | .facedDilemma minCount =>
+      let count : Nat :=
+        st.events.foldl (fun n e =>
+          if e.turn == targetTurn then
+            match e.change with
+            | .rules (.player (.facedDilemma q)) => if pids.contains q then n + 1 else n
+            | _ => n
+          else n) 0
+      count ≥ minCount
     | .attackedWith pred minCount =>
       pids.any fun p => Id.run do
         let mut count : Nat := 0
@@ -1526,6 +1575,22 @@ partial def evalCondition (g : Game) (env : EvalEnv) (cond : Condition) : Bool :
   | .cmp op a b => op.eval (evalValue g env a) (evalValue g env b)
   | .exists objs => !(evalObjects g env objs).isEmpty
   | .forAll objs pred => (evalObjects g env objs).all (fun v => evalObjectPred g env v pred)
+  | .allShare objs char =>
+    let views := evalObjects g env objs
+    match views[0]? with
+    | none => false
+    | some v0 =>
+      match char with
+      | .color =>
+        let c0 := viewColors st v0
+        (#[Color.white, .blue, .black, .red, .green]).any (fun c => c0.contains c && views.all (fun v => (viewColors st v).contains c))
+      | .cardType => (viewTypes st v0).any (fun t => views.all (fun v => (viewTypes st v).contains t))
+      | .creatureType =>
+        (viewSubtypes st v0).any (fun s => !s.isNoncreature && views.all (fun v => (viewSubtypes st v).contains s))
+      | .subtype => (viewSubtypes st v0).any (fun s => views.all (fun v => (viewSubtypes st v).contains s))
+      | .name =>
+        let nm := viewName st v0
+        !nm.isEmpty && views.all (fun v => viewName st v == nm)
   | .playerPred who pred =>
     let ps := evalPlayer g env who
     !ps.isEmpty && ps.all (fun p => evalPlayerPred g env p pred)
@@ -1552,6 +1617,8 @@ def evalDuration (g : Game) (env : EvalEnv) (dur : DurationExpr) : Option Effect
     ((evalPlayer g env who)[0]?).map EffectDuration.untilEndOfNextTurnOf
   | .whileOnBattlefield obj =>
     (evalObjectId? g env obj).map EffectDuration.whileSourceOnBattlefield
+  | .whileTapped obj =>
+    (evalObjectId? g env obj).map EffectDuration.whileTapped
   | .untilLeavesBattlefield obj =>
     (evalObjectId? g env obj).map EffectDuration.untilSourceLeaves
   | .whileHasCounter obj k =>

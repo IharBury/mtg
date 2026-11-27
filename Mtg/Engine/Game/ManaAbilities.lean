@@ -541,6 +541,7 @@ def manaAbilityDefUsable (g : Game) (p : PlayerId) (o : GameObject) (d : ManaAbi
         (excludedIds := if d.exileSelfFromGraveyard then #[o.id] else #[])
     | none => true
   !d.hasUnmodeledCostItem &&
+    !(d.sacrificeSelf && g.cantSacrificeObject p o) &&
     !(g.manaAbilityEffectiveCost p o d).containsX &&
     g.manaAbilitySourceZoneOk p o d &&
     !turnLimitHit &&
@@ -1369,11 +1370,14 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
       throw s!"{oname} is already chosen to tap for teamwork"
     if g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p) then
       throw s!"{oname} has summoning sickness (CR 302.6)"
+  if d.sacrificeSelf && g.cantSacrificeObject p o then
+    throw s!"You can't sacrifice {oname}"
   if sacOrExileSelf then
     if let some prop := g.proposedSpell then
       if (prop.sourceId == some id && g.proposedNeedsBattlefieldSource prop sinceIdx) ||
           prop.teamworkCreatures.contains id ||
-          (prop.sneakAttacker == some id && !g.sneakPaid prop.spellId) then
+          (prop.sneakAttacker == some id && !g.sneakPaid prop.spellId) ||
+          (prop.beamMeUpCreature == some id && !GameEvent.beamMeUpPaid g.events prop.spellId) then
         throw s!"{oname} is needed on the battlefield for the proposed spell or ability"
   if discOrExileHand then
     if let some prop := g.proposedSpell then

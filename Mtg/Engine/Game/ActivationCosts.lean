@@ -195,12 +195,18 @@ private partial def costItemAllowsObject (g : Game) (p : PlayerId) (sourceId : O
   let env : EvalEnv := { controller := p, sourceId }
   match item with
   | .sacrifice _ (.filter pred) =>
-    perm && (!sacrificeOrExileSource || other) && EvalExpr.evalObjectPred g env (.live o) pred
+    perm && !g.cantSacrificeObject p o && (!sacrificeOrExileSource || other) && EvalExpr.evalObjectPred g env (.live o) pred
   | .discard _ .hand =>
     inHand && (!discardOrExileHandSource || other)
   | .discard _ (.matching pred) =>
     inHand && (!discardOrExileHandSource || other) && EvalExpr.evalObjectPred g env (.live o) pred
   | .exile _ zones (.filter pred) _ =>
+    let inZone :=
+      (zones.zones.contains .graveyard && o.owner == p && o.zone == .graveyard p && isDiscardableCard o) ||
+      (zones.zones.contains .hand && inHand && (!discardOrExileHandSource || other)) ||
+      (zones.zones.contains .battlefield && perm && (!sacrificeOrExileSource || other))
+    inZone && EvalExpr.evalObjectPred g env (.live o) pred
+  | .putOnLibrary _ zones (.filter pred) _ =>
     let inZone :=
       (zones.zones.contains .graveyard && o.owner == p && o.zone == .graveyard p && isDiscardableCard o) ||
       (zones.zones.contains .hand && inHand && (!discardOrExileHandSource || other)) ||
@@ -223,30 +229,31 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick 
     (sacrificeOrExileSource : Bool := false)
     (discardOrExileHandSource : Bool := false) : Bool :=
   let perm := o.isOnBattlefield && g.controlledBy o p
+  let canSac := perm && !g.cantSacrificeObject p o
   let inHand := o.owner == p && o.zone == .hand p && isDiscardableCard o
   let other := sourceId.all (o.id != ·)
   let artifact := g.isArtifact o
   match pick with
-  | .sacrificeAnotherCreature => perm && other && g.isCreature o
-  | .sacrificeAnotherSubtype t => perm && other && g.hasSubtype o t
+  | .sacrificeAnotherCreature => canSac && other && g.isCreature o
+  | .sacrificeAnotherSubtype t => canSac && other && g.hasSubtype o t
 
-  | .sacrificeArtifact => perm && (!sacrificeOrExileSource || other) && artifact
+  | .sacrificeArtifact => canSac && (!sacrificeOrExileSource || other) && artifact
   | .sacrificeLegendaryArtifact =>
-    perm && (!sacrificeOrExileSource || other) && artifact && g.isLegendary o
+    canSac && (!sacrificeOrExileSource || other) && artifact && g.isLegendary o
   | .sacrificeArtifactOrCreature =>
-    perm && (!sacrificeOrExileSource || other) && (artifact || g.isCreature o)
-  | .sacrificeAnotherArtifact => perm && other && artifact
+    canSac && (!sacrificeOrExileSource || other) && (artifact || g.isCreature o)
+  | .sacrificeAnotherArtifact => canSac && other && artifact
   | .sacrificeAnotherCreatureOrArtifact =>
-    perm && other && (g.isCreature o || artifact)
+    canSac && other && (g.isCreature o || artifact)
   | .sacrificeAnotherCreatureOrPlaneswalker =>
-    perm && other && (g.isCreature o || g.isPlaneswalker o)
+    canSac && other && (g.isCreature o || g.isPlaneswalker o)
   | .sacrificeArtifactOrLand =>
-    perm && (!sacrificeOrExileSource || other) && (artifact || g.isLand o)
+    canSac && (!sacrificeOrExileSource || other) && (artifact || g.isLand o)
   | .sacrificeEquipmentAttachedToSource =>
-    perm && (!sacrificeOrExileSource || other) && g.isEquipment o &&
+    canSac && (!sacrificeOrExileSource || other) && g.isEquipment o &&
       sourceId.isSome && o.attachedTo == sourceId
   | .sacrificeArtifactOrDiscardNonland =>
-    (perm && (!sacrificeOrExileSource || other) && artifact) ||
+    (canSac && (!sacrificeOrExileSource || other) && artifact) ||
       (inHand && (!discardOrExileHandSource || other) && !g.isLand o)
   | .discardACard => inHand && (!discardOrExileHandSource || other)
   | .discardNonland => inHand && (!discardOrExileHandSource || other) && !g.isLand o
@@ -490,9 +497,24 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
               return (if g.currentBatch.isNone then abortOrNoop g else g, false)
             match pick with
             | .tapUntappedCreature | .tapTwoUntappedArtifacts | .custom (.tapObjects ..) =>
+              let records :=
+                g.isCreature o && (
+                  (abilityId.bind g.findObject?).any (fun ab =>
+                    ab.abilityEffect.any (fun e => Effect.usesCostPaidObjects e.body)) ||
+                  (g.proposedSpell.bind (·.activation)).any (·.cost.bindVar?.isSome))
+              let pw := g.power o
               let oName := g.name o
               g := (g.becomeTapped o (cause := some (.costPayment .tap p forObj))).logMsg
                 s!"{name} taps {oName} to pay a cost"
+              if records then
+                if let some aid := abilityId then
+                  if (g.findObject? aid).isSome then
+                    g := g.setStackEntryLastKnown aid (lastKnownPower := some pw)
+            | .custom (.putOnLibrary _ _ _ pos) =>
+              let oName := g.name o
+              g := (g.move id (.library o.owner) none (cause := some (.costPayment .putOnLibrary p forObj))
+                (libraryPosition := pos) (deferPlayFromExileLogs := deferPfe)).1
+              g := g.logMsg s!"{name} puts {oName} on the library to pay a cost"
             | .exileAnotherCreatureCardFromGraveyard | .custom (.exile ..) =>
               let msg :=
                 if o.zone == .graveyard o.owner then s!"{name} exiles {g.name o} from their graveyard"

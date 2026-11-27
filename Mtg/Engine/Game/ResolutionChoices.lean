@@ -520,6 +520,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       return g.change (.pending (.resolutionChoice p (.triggerModes objId left chosen)))
     let sorted := chosen.qsort (· < ·)
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
+    let g := if !sorted.isEmpty then g.record (GameEvent.facedDilemma g.turnNumber p (source? := some obj.id)) else g
     match combineTriggerModes (modes.map (fun m => g.expandEachOpponentEffect p m (some obj.id))) sorted with
     | none => return g.finishResolutionChoice
     | some eff =>
@@ -556,6 +557,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       return g.change (.pending (.resolutionChoice p (.upToTriggerModes objId left chosen)))
     let sorted := chosen.qsort (· < ·)
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
+    let g := if !sorted.isEmpty then g.record (GameEvent.facedDilemma g.turnNumber p (source? := some obj.id)) else g
     match combineTriggerModes (modes.map (fun m => g.expandEachOpponentEffect p m (some obj.id))) sorted with
     | none => return g.finishResolutionChoice
     | some eff =>
@@ -574,6 +576,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       return g.finishResolutionChoice
     let sorted := chosen.qsort (· < ·)
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
+    let g := g.record (GameEvent.facedDilemma g.turnNumber p (source? := some obj.id))
     match combineTriggerModes (modes.map (fun m => g.expandEachOpponentEffect p m (some obj.id))) sorted with
     | none => return g.finishResolutionChoice
     | some eff =>
@@ -594,6 +597,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       if (g.findObject? objId).isSome then
         g.record (GameEvent.announced g.turnNumber objId (modes := #[idx]))
       else g
+    let g := g.record (GameEvent.facedDilemma g.turnNumber p (source? := some objId))
     let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1}"
     return g.finishResolutionChoice
   | .stackTriggerUnusedMode _ _ available _, .decline =>

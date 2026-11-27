@@ -573,7 +573,7 @@ def proposalAltCleanPerm? (g : Game) (prop : ProposedSpell) (altFace : CardDef) 
   match g.findObject? prop.spellId with
   | none => none
   | some spell =>
-    if prop.sneakAttacker.isSome ||
+    if prop.sneakAttacker.isSome || prop.beamMeUpCreature.isSome ||
         GameEvent.castWithFlashback g.events prop.spellId ||
         (prop.origPerm.bind (·.prepareSource)).isSome ||
         g.isForcedWithoutManaCostProposal prop then

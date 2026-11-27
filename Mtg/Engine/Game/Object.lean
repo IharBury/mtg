@@ -67,6 +67,8 @@ structure PlayPermission where
   /-- Whether playing a land is permitted (CR 305.9: "You may play" allows lands,
   "You may cast" sets this to `false`). -/
   landsAllowed : Bool := true
+  /-- Additional generic mana required when casting this exiled card (CR 601.2f). -/
+  extraGenericCost : Nat := 0
 deriving Repr, Inhabited, BEq
 
 /-- Frozen Layer-6 ability-retention and evaluated ability/count snapshot carried
@@ -282,6 +284,13 @@ inductive ReplacementEffectKind where
   | asEntersChooseCardName (name : String) -- 616.1e / 614.1c / 614.12
   | asEntersChooseCardType (cardType : CardType) -- 616.1e / 614.1c / 614.12
   | asEntersChooseAnchor (anchor : String) -- 616.1e / 614.1c / 614.12
+  | asEntersChooseNumber (n : Int)        -- 616.1e / 614.1c / 614.12
+  | entersUntapped                        -- 616.1e / 614.1c
+  | entersTappedAndAttacking              -- 616.1e / 614.1c
+  | saveFromDestroyRemoveCounters (kind : CounterKind) -- 616.1e / 614.1a
+  | preventAllDamageToPlayer              -- 615
+  | beamMeUpExile                         -- 616.1e / 702.196a
+  | sunburstCounters                      -- 616.1e / 702.44
   | entersWithLoyalty                    -- 306.5b / 616.1e / 614.1c / 614.12
   | entersWithPlusOneCounters            -- 616.1e / 614.1c / 614.12
   | entersWithXPlusOne                   -- 616.1e / 614.1c / 614.12
@@ -506,6 +515,7 @@ structure EventObject where
   chosenName         : Option String               := none
   chosenCardType     : Option CardType             := none
   chosenAnchor       : Option String               := none
+  chosenNumber       : Option Int                  := none
   -- Arrival status and printed/copiable card carried so `applyZoneEvent`
   -- reconstructs the `GameObject` and LKI copiable values without live state.
   summoningSick      : Bool                        := false

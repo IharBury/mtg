@@ -754,6 +754,7 @@ def untapStepPermanents (g : Game) (ids : Array ObjectId)
               g := g.logMsg s!"{apName} untaps {g.name o}"
               if untap.watches .wouldUntap then
                 g := g.record untap
+                g := g.expireWhileTappedEffects o.id (cause := some baseCause)
     return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 def expireFinishedNextTurnPlayerControl (g : Game) : Game :=

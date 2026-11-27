@@ -1154,7 +1154,7 @@ def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId
 
 /-- Creatures `p` may sacrifice to a “sacrifices a creature of their choice” effect. -/
 def sacrificeCreatureChoices (g : Game) (p : PlayerId) : Array GameObject :=
-  g.creaturesControlledBy p
+  (g.creaturesControlledBy p).filter (fun o => !g.cantSacrificeObject p o)
 
 /-- Whether `sac` is a legal creature for `p` to sacrifice to an edict. -/
 def canSacrificeCreature (g : Game) (p : PlayerId) (sac : GameObject) : Bool :=

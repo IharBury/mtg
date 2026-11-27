@@ -196,7 +196,7 @@ def buildLegalTargetSlots (g : Game) (controller : PlayerId) (spec : TargetSpec)
           match slot.count with
           | .exact n | .upTo n => n
           | .between _ hi => hi
-          | .anyNumber => targets.size - pos
+          | .anyNumber | .exactX => targets.size - pos
       let legal := g.legalTargetsForSlot controller slot sourceId stackSelf
       let isLegalTarget (t : Target) : Bool :=
         legal.contains t ||
@@ -299,15 +299,18 @@ private def resolvePlayPerm (g : Game) (env : EvalEnv) (spec : GrantPlayPermSpec
     | some (.exists (.inZones .battlefield (.all #[.hasSubtype (.literal sub), .controlledBy .you]))) =>
       some sub
     | _ => none
+  let beneficiary :=
+    (spec.beneficiary?.bind fun pe => (EvalExpr.evalPlayer g env pe)[0]?).getD env.controller
   let perm : PlayPermission := {
-    player := env.controller
+    player := beneficiary
     whileExiled := whileEx
     withoutManaCost := spec.freeCast
     payLifeEqualManaValue := spec.payLifeInsteadOfMana
-    anyMana := spec.anyManaColor
+    anyMana := spec.anyManaColor || spec.anyManaType
     requireSubtype := reqSub?
     ignoreTiming := spec.freeCast
     landsAllowed := spec.landsAllowed
+    extraGenericCost := spec.extraGenericCost
   }
   (perm, dur)
 
@@ -316,13 +319,13 @@ private def grantPlayPermToMoved (g : Game) (env : EvalEnv) (fromId : ObjectId)
   match g.followMovedToZone? fromId (· == .exile) with
   | none => g
   | some moved =>
-    if !g.stillInGame env.controller || !isCastableObject moved then g
+    let (perm0, dur0) := resolvePlayPerm g env spec
+    if !g.stillInGame perm0.player || !isCastableObject moved then g
     else if !(!g.isLand moved || spec.landsAllowed) ||
         !spec.filter?.all (EvalExpr.evalObjectPred g env (.live moved)) then g
     else if spec.asFlashback then
       g.createEffect (.flashbackUntilEot moved.id) (cause := some cause)
     else
-      let (perm0, dur0) := resolvePlayPerm g env spec
       let (perm, dur) : PlayPermission × EffectDuration :=
         match spec.duration with
         | .whileInZone _ .exile | .indefinite =>
@@ -872,6 +875,7 @@ private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest 
             let val? : Option Int :=
               match metric with
               | .one => some 1
+              | .name => if (g.name o).isEmpty then none else some 1
               | .stat sk => EvalExpr.viewStat? g (.live o) sk
               | .counterCount k? => some (Int.ofNat (EvalExpr.viewCounterCount (.live o) k?))
               | .colorCount => some (Int.ofNat (g.colors o).count)
@@ -1357,6 +1361,31 @@ private def execCounterOpStep (g : Game) (ctx : InterpCtx)
               | none => g
             else
               g.putCountersDeferredLog cur.id k cnt (some ctx.controller) .isPutOn (cause := some cause)) g
+        | .putAnotherOfChosen =>
+          let bag := cur.status.toCounterBag
+          let chosenKind? : Option CounterKind :=
+            if cur.status.plusOnePlusOne > 0 then some .plusOnePlusOne
+            else bag[0]?.map (·.1)
+          if let some k := chosenKind? then
+            if k == .plusOnePlusOne then
+              g := g.addPlusOnePlusOneTo cur 1 (byPlayer := some ctx.controller) (cause := some cause)
+            else
+              g := g.putCountersDeferredLog cur.id k 1 (some ctx.controller) .isPutOn (cause := some cause)
+        | .distribute kind countExpr =>
+          let total := (EvalExpr.evalValue g env countExpr).toNat
+          let divided : Array Nat :=
+            ((g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.stackEntry?).map (·.dividedDamage) |>.getD #[]
+          let share : Nat :=
+            match divided[i]? with
+            | some d => d
+            | none =>
+              if ids.size == 0 then 0
+              else total / ids.size + (if i < total % ids.size then 1 else 0)
+          if share > 0 then
+            if kind == .plusOnePlusOne then
+              g := g.addPlusOnePlusOneTo cur share (byPlayer := some ctx.controller) (cause := some cause)
+            else
+              g := g.putCountersDeferredLog cur.id kind share (some ctx.controller) .isPutOn (cause := some cause)
         if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
           let rem := ids.extract (i + 1) ids.size
           if !rem.isEmpty || deferPfe then
@@ -1512,6 +1541,51 @@ private def execPermanent (g : Game) (ctx : InterpCtx) (op : PermanentOp) : Game
         g.record (GameEvent.designation g.turnNumber (g.snapshot o) (.goaded ctx.controller false) value (cause := cause))
       | .ringBearer =>
         if value then g.setRingBearer ctx.controller (some o.id) (cause := some cause) else g) g
+  | .assimilate objs choice? =>
+    -- CR 701.72a–b: Assimilate a permanent on the battlefield (gain control + +1/+1 counter + Borg artifact creature)
+    -- or a permanent card in another zone (put onto battlefield under your control with a +1/+1 counter; Borg artifact creature).
+    let raw := resolveLiveObjects g env objs
+    let picked : Array GameObject :=
+      match choice? with
+      | some ch =>
+        let cands :=
+          match ch.filter? with
+          | some fp => raw.filter (fun o => EvalExpr.evalObjectPred g env (.live o) fp)
+          | none => raw
+        let (_, hi) := evalInterpCountRange g env ch.count
+        cands.extract 0 (min hi cands.size)
+      | none => raw
+    if picked.isEmpty then g
+    else
+      g.withBatch (some cause) fun g =>
+        picked.foldl (fun g o =>
+          match g.findObject? o.id with
+          | none => g
+          | some cur =>
+            let borgLayer : LayerEffect :=
+              .types .setAndKeepNoncreatureSubtypes #[.artifact, .creature] #[.borg] #[]
+            if cur.isOnBattlefield then
+              let g :=
+                if g.controllerOf cur == some ctx.controller then g
+                else g.createEffect (.layered (.objects #[cur.id]) (.control ctx.controller) .indefinite) (cause := some cause)
+              let g := g.createEffect (.layered (.objects #[cur.id]) borgLayer .indefinite) (cause := some cause)
+              let g :=
+                match g.findObject? cur.id with
+                | some live => g.addPlusOnePlusOneTo live 1 (byPlayer := some ctx.controller) (cause := some cause)
+                | none => g
+              g.logMsg s!"{(g.player ctx.controller).name} assimilates {g.name cur}"
+            else
+              let (g, newId) :=
+                g.move cur.id .battlefield (some ctx.controller)
+                  (extraEntersWith := #[(.plusOnePlusOne, 1)])
+                  (cause := some cause)
+              match g.findObject? newId with
+              | some entered =>
+                if entered.isOnBattlefield then
+                  let g := g.createEffect (.layered (.objects #[entered.id]) borgLayer .indefinite) (cause := some cause)
+                  g.logMsg s!"{(g.player ctx.controller).name} assimilates {g.name entered}"
+                else g
+              | none => g) g
 
 /-! ### Action Family 4: `damage` -/
 
@@ -2456,8 +2530,76 @@ private def execPlayer (g : Game) (ctx : InterpCtx) (op : PlayerOp) :
             else
               let mates := g.livingPlayers.filter (fun pl => pl.id != p && g.areTeammates p pl.id)
               let msg := g.formatWinMessage (#[p] ++ mates.map (·.id))
-              (g.record (GameEvent.gameEnded g.turnNumber (.won p) (cause := some cause))).logMsg msg) g
+              (g.record (GameEvent.gameEnded g.turnNumber (.won p) (cause := some cause))).logMsg msg
+          | .loseGame =>
+            -- CR 104.3a: a player instructed to lose the game loses unless shielded by cantLoseGame.
+            let hasCantLose (g : Game) (pid : PlayerId) : Bool :=
+              g.objects.any fun o =>
+                (o.isOnBattlefield || o.zone == .command) &&
+                  let srcCtrl := (g.controllerOf o).getD o.owner
+                  g.stillInGame srcCtrl &&
+                    let env' : EvalEnv := { controller := srcCtrl, sourceId := some o.id }
+                    (g.staticAbilities o).any fun ab =>
+                      ab.anyRule fun cond? r =>
+                        match r with
+                        | .player (.cantLoseGame who) =>
+                          cond?.all (EvalExpr.evalCondition g env') &&
+                            EvalExpr.matchesPlayerFilter g env' who pid
+                        | _ => false
+            let shielded :=
+              hasCantLose g p ||
+                g.livingPlayers.any (fun mate => g.areTeammates p mate.id && hasCantLose g mate.id)
+            if g.over || !g.stillInGame p || shielded then g
+            else
+              (g.record (GameEvent.playerLost g.turnNumber p .effect (cause := some cause))).logMsg
+                s!"{(g.player p).name} loses the game") g
       (g, none, #[])
+  | .discover whoExpr amtExpr =>
+    -- CR 701.57a: Exile cards from the top of your library until you exile a nonland card
+    -- with mana value N or less. Cast it without paying its mana cost or put it into your hand.
+    -- Put the rest on the bottom in a random order.
+    let n := (EvalExpr.evalValue g env amtExpr).toNat
+    match (EvalExpr.evalPlayer g env whoExpr)[0]? with
+    | none => (g, none, #[])
+    | some p =>
+      if !g.stillInGame p then (g, none, #[])
+      else
+        let (g1, hit?, missed) := Id.run do
+          let mut g := g
+          let mut missed : Array ObjectId := #[]
+          let mut hit? : Option ObjectId := none
+          let mut fuel := (g.player p).library.size
+          while fuel > 0 && hit?.isNone do
+            fuel := fuel - 1
+            match (g.player p).library.back? with
+            | none => break
+            | some topId =>
+              let (gNext, movedId) := g.move topId .exile none (cause := some cause)
+              g := gNext
+              match g.findObject? movedId with
+              | some o =>
+                if !g.isLand o && g.objectManaValue o ≤ n then
+                  hit? := some movedId
+                else
+                  missed := missed.push movedId
+              | none => pure ()
+          return (g, hit?, missed)
+        match hit? with
+        | none =>
+          let g := g1.putRestOnBottomRandom p missed (cause := some cause)
+          (g.logMsg s!"{(g.player p).name} discovers {n} (no matching card found)", none, #[])
+        | some hitId =>
+          let hitName := ((g1.findObject? hitId).map g1.name).getD "a card"
+          let discoverVar : VarId := ⟨996⟩
+          let g := g1.change (.bindStepOutcome discoverVar { objects := #[hitId], movedCount := 1, succeeded := true })
+          let g := g.beginResolutionChoice p (.mayCastCards #[hitId] true false)
+            s!"{(g.player p).name} discovers {n} ({hitName}): may cast without paying its mana cost or put into hand"
+          let fallbackToHand : Instruction :=
+            .moveZone (.stepObjects discoverVar) (.hand .owner) .put {}
+          let postConts : Array InterpCont :=
+            (if missed.isEmpty then #[] else #[.afterRevealUntil p missed false #[] cause]) ++
+            #[.seqRest #[fallbackToHand]]
+          (g, some { objects := #[hitId], movedCount := 1, succeeded := true }, postConts)
   | .choose whoExpr kind =>
     let chooser := (EvalExpr.evalPlayer g env whoExpr)[0]?.getD ctx.controller
     match kind with
@@ -2957,6 +3099,10 @@ private partial def applyRuleMod (g : Game) (env : EvalEnv) (ctx : InterpCtx)
     | .controlPlayer who =>
       (EvalExpr.evalPlayerFilter g env who).foldl (fun g p =>
         g.setPlayerControl ctx.controller p (onNextTurn := true)) g
+    | .cantAttack who =>
+      (EvalExpr.evalPlayerFilter g env who).foldl (fun g p =>
+        (g.createEffect (.playerRule p (.cantAttackPlayer none) dur) (cause := some cause)).logMsg
+          s!"{(g.player p).name} can't attack") g
     | _ => g
   | .play pr =>
     match pr with
@@ -3031,6 +3177,8 @@ private def execInstallEffect (g : Game) (ctx : InterpCtx) (op : InstallEffectOp
         match dur with
         | .whileSourceOnBattlefield sid | .untilSourceLeaves sid =>
           (g.findObject? sid).any (·.isOnBattlefield)
+        | .whileTapped sid =>
+          (g.findObject? sid).any (fun o => o.isOnBattlefield && o.status.tapped)
         | _ => true
       if !durStillValid then
         match mod with
@@ -3122,6 +3270,17 @@ private def execInstallEffect (g : Game) (ctx : InterpCtx) (op : InstallEffectOp
           let live := (resolveLiveObjects g env filter.toExpr).filter (·.isOnBattlefield)
           live.foldl (fun g o => g.createEffect (.preventDamageWhileSource o.id sid) (cause := some cause)) g
         | _, _ => g
+      | .preventDamageToPlayer who _ =>
+        (EvalExpr.evalPlayerFilter g env who).foldl (fun g p =>
+          let spec : PreventionSpec := {
+            id := { kind := .preventAllDamageToPlayer, player := some p }
+            source := ctx.sourceId
+            controller := some ctx.controller
+            affectedPlayer := p
+            kind := .preventAllDamageToPlayer p
+          }
+          (g.createEffect (.prevention spec dur) (cause := some cause)).logMsg
+            s!"Prevent all damage that would be dealt to {(g.player p).name}") g
       | _ => g
   | .createDelayedTrigger spec =>
     let src := ctx.sourceId.bind g.damageSourceById?
@@ -3320,6 +3479,7 @@ private partial def shiftInstrTargetSlots (delta : Nat) : Instruction → Instru
       | .permanent (.turnFaceUp o) => .permanent (.turnFaceUp (shiftObjTargetSlot delta o))
       | .permanent (.phaseOut o u) => .permanent (.phaseOut (shiftObjTargetSlot delta o) u)
       | .permanent (.setDesignation o t v) => .permanent (.setDesignation (shiftObjTargetSlot delta o) t v)
+      | .permanent (.assimilate o ch?) => .permanent (.assimilate (shiftObjTargetSlot delta o) ch?)
       | .damage (.deal s r a f) =>
         .damage (.deal (shiftObjTargetSlot delta s) (shiftRecipientTargetSlot delta r) a f)
       | .damage (.fight a b o) =>
@@ -3328,6 +3488,7 @@ private partial def shiftInstrTargetSlots (delta : Nat) : Instruction → Instru
       | .life (.lose w a) => .life (.lose (shiftPlayerTargetSlot delta w) a)
       | .life (.set w a) => .life (.set (shiftPlayerTargetSlot delta w) a)
       | .player (.drawCards w a) => .player (.drawCards (shiftPlayerTargetSlot delta w) a)
+      | .player (.discover w a) => .player (.discover (shiftPlayerTargetSlot delta w) a)
       | .player (.connive o) => .player (.connive (shiftObjTargetSlot delta o))
       | .player (.explore o) => .player (.explore (shiftObjTargetSlot delta o))
       | .stack (.counterStack o e f) => .stack (.counterStack (shiftObjTargetSlot delta o) e f)

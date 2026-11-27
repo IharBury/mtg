@@ -187,7 +187,10 @@ def onLandYouControlEntersPutPlusOne (n : Nat := 1) : GrantedAbility :=
 Oracle text writes `with "..."` inline on the token description. -/
 def oracleQuote? : GrantedAbility → Option String
   | .activated ab =>
-    if ab.cost == CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self] &&
+    if ab.cost == CostSpec.tapOnly &&
+        ab.effect.body == .player (.addMana .you { spec := .oneOf .anyColor (.const 1) }) then
+      some "{T}: Add one mana of any color."
+    else if ab.cost == CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self] &&
         ab.effect.body == .player (.addMana .you { spec := .oneOf .anyColor (.const 1) }) then
       some "{T}, Sacrifice this token: Add one mana of any color."
     else if ab.cost == CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self] then
@@ -232,6 +235,8 @@ def oracleQuote? : GrantedAbility → Option String
     | .ruleModifying none (.combat (.maxBlockers .self n)) =>
       let w := if n == 1 then "one creature" else s!"{englishNumber n} creatures"
       some s!"This token can't be blocked by more than {w}."
+    | .ruleModifying none (.game (.cantPhaseIn _)) =>
+      some "Permanents can't phase in."
     | .continuous none _ (.modifyPT (.const p) (.const t)) =>
       let ps := if p >= 0 then s!"+{p}" else s!"{p}"
       let ts := if t >= 0 then s!"+{t}" else s!"{t}"

@@ -152,7 +152,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   let rawFace := g.baseCard spell
   let kwFace := { rawFace with keywords := g.proposedSpellKeywords prop spell }
   if !kick then
-    if prop.sneakAttacker.isNone && kwFace.morph.isSome && kwFace.kicker.isNone then
+    if prop.sneakAttacker.isNone && prop.beamMeUpCreature.isNone && kwFace.morph.isSome && kwFace.kicker.isNone then
       let effPerm :=
         if prop.resolutionCast then
           some { (prop.origPerm.getD { player := prop.caster }) with
@@ -173,7 +173,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   | some _, _, none =>
     if g.spellNameForbidden "" then
       throw "Nameless spells can't be cast"
-    if prop.sneakAttacker.isSome ||
+    if prop.sneakAttacker.isSome || prop.beamMeUpCreature.isSome ||
         GameEvent.castWithFlashback g.events prop.spellId ||
         (prop.origPerm.bind (·.prepareSource)).isSome ||
         g.isForcedWithoutManaCostProposal prop then
@@ -207,7 +207,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
       #[.kicked true, .kickerAnnounced true, .cost cost, .payLife 0, .alternativeCost true,
         .needsSacrificeOther false, .needsDiscardCard false]
   | _, some (n, alt), none =>
-    if prop.sneakAttacker.isSome ||
+    if prop.sneakAttacker.isSome || prop.beamMeUpCreature.isSome ||
         GameEvent.castWithFlashback g.events prop.spellId ||
         (prop.origPerm.bind (·.prepareSource)).isSome ||
         g.isForcedWithoutManaCostProposal prop then
@@ -237,7 +237,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.kicker]))
     let effPerm :=
       prop.origPerm <|>
-        (if prop.alternativeCost && prop.sneakAttacker.isNone &&
+        (if prop.alternativeCost && prop.sneakAttacker.isNone && prop.beamMeUpCreature.isNone &&
             !g.castFromGraveyard spell.id &&
             !(match prop.original.zone with | .graveyard _ => true | _ => false) then
           some { player := prop.caster, withoutManaCost := true }
@@ -246,7 +246,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
       g.playManaCost preSpell rawFace (kicker.addCost extraGen)
         (origPerm := effPerm)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
-        (explicitAltCost := prop.sneakAttacker.isSome)
+        (explicitAltCost := prop.sneakAttacker.isSome || prop.beamMeUpCreature.isSome)
         (useImplicitPermissions := false)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
 

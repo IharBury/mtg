@@ -52,6 +52,23 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
     (costs := #[.sneak attackerId atkTarget]) (cause := cause))
   return g.logMsg s!"{(g.player p).name} pays a sneak cost"
 
+/-- Pay beam me up: return a creature you control that can be beamed up to its
+owner's hand as part of casting an instant or sorcery from your graveyard
+(CR 702.196a–b). -/
+def payBeamMeUp (g : Game) (p : PlayerId) (spellId : ObjectId) (creatureId : ObjectId) :
+    Except String Game := do
+  let some creature := g.findObject? creatureId | throw "no such object"
+  if !(creature.isOnBattlefield && g.isCreature creature && g.controlledBy creature p) then
+    throw s!"{g.name creature} is not a creature you control"
+  if g.cantBeBeamedUp creature then
+    throw s!"{g.name creature} can't be beamed up (CR 702.196b)"
+  let some _spell := g.findObject? spellId | throw "The spell left the stack"
+  let cause := some (EventCause.costPayment .returnToHand p (some spellId))
+  let g := g.returnToHand creatureId creature.owner (cause := cause)
+  let g := g.record (GameEvent.announced g.turnNumber spellId
+    (costs := #[.beamMeUp creatureId]) (cause := cause))
+  return g.logMsg s!"{(g.player p).name} pays a beam me up cost"
+
 /-- Starting mana cost of `face` before increases and reductions (CR 118.7).
 The flashback cost replaces the mana cost only for a cast actually made via Flashback
 (CR 702.34a / 601.2b,f): `flashback := some b` states it explicitly (the caster
@@ -184,8 +201,9 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     match effPerm with
     | some perm => perm.anyMana
     | none => useImplicitPermissions && card.zone == .exile && g.mayCastExiledBySource caster card
-  -- Cost-increasing static abilities (Thalia, etc., CR 601.2f).
-  let tax := evalSpellCostMods g cardForCaster face caster true
+  -- Cost-increasing static abilities (Thalia, Zero, Incorporeal Sensate, etc., CR 601.2f).
+  let permExtra := (effPerm.map (·.extraGenericCost)).getD 0
+  let tax := evalSpellCostMods g cardForCaster face caster true + permExtra
   let increase := if tax == 0 then increase else increase.addCost (ManaCost.ofGeneric tax)
   let inGy := match card.zone with | .graveyard _ => true | _ => false
   let kwFlashback? := ({ face with keywords := g.currentKeywords card }).flashback
@@ -244,7 +262,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
         (g.staticAbilities o).any fun ab =>
           ab.anyRule fun cond? r =>
             match r with
-            | .play (.mayPlayFrom who .hand pred _ _ _ true) =>
+            | .play (.mayPlayFrom who .hand pred _ _ _ true _ _ _ _) =>
               EvalExpr.matchesPlayerFilter g env who caster &&
                 cond?.all (EvalExpr.evalCondition g env) &&
                 EvalExpr.evalObjectPred g env spellView pred

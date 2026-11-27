@@ -2,7 +2,7 @@ import Mtg.Engine.Catalog.Supported
 
 /-!
 Smoke-check `parseOracleCard` on full printed cards and verify structural
-`parseOracleCard (renderFullOracle c) == .ok c` round-trips across all 981
+`parseOracleCard (renderFullOracle c) == .ok c` round-trips across all 1,292
 supported catalog cards.
 -/
 

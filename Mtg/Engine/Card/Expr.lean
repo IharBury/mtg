@@ -100,12 +100,13 @@ def pluralOracleWord : StatKind → String
 
 end StatKind
 
-/-- Per-object numeric metric aggregated by `ValueExpr.aggregate`. -/
+/-- Per-object numeric or distinctness metric aggregated by `ValueExpr.aggregate`. -/
 inductive ObjectMetric where
   | one
   | stat (kind : StatKind)
   | counterCount (kind? : Option CounterKind := none)
   | colorCount
+  | name
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Subtype category counted by `ValueExpr.subtypeCount` (CR 205.3). -/
@@ -174,6 +175,9 @@ inductive PlayerMetric where
   | unspentMana
   | poisonCounters
   | opponentsCount
+  | dilemmasFacedThisTurn
+  | spellsCastThisGame
+  | extraTurnsBegunThisGame
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Post-replacement numeric outcome read from a bound step (`ValueExpr.stepMetric`, CR 614.6). -/
@@ -211,6 +215,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 /-- Count / arity range for selections and target slots (CR 115.1 / 601.2c). -/
 inductive CountRange where
   | exact (n : Nat)
+  | exactX
   | upTo (n : Nat)
   | between (lo hi : Nat)
   | anyNumber
@@ -278,6 +283,7 @@ inductive ParamKeywordTag where
   | sneak
   | crew
   | teamwork
+  | beamMeUp
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace ParamKeywordTag
@@ -294,10 +300,11 @@ def oracleName : ParamKeywordTag → String
   | .sneak => "sneak"
   | .crew => "crew"
   | .teamwork => "teamwork"
+  | .beamMeUp => "beam me up"
 
 end ParamKeywordTag
 
-/-- Keyword identity tested by `ObjectPred.hasKeyword` (CR 702; 35 constructors). -/
+/-- Keyword identity tested by `ObjectPred.hasKeyword` (CR 702; 37 constructors). -/
 inductive KeywordTag where
   | flying
   | firstStrike
@@ -329,6 +336,8 @@ inductive KeywordTag where
   | myriad
   | undying
   | extort
+  | station
+  | sunburst
   | ward
   | toxic
   | protection
@@ -369,6 +378,8 @@ def oracleName : KeywordTag → String
   | .myriad => "myriad"
   | .undying => "undying"
   | .extort => "extort"
+  | .station => "station"
+  | .sunburst => "sunburst"
   | .ward => "ward"
   | .toxic => "toxic"
   | .protection => "protection"
@@ -409,6 +420,8 @@ def ofOracle? (raw : String) : Option KeywordTag :=
   | "myriad" => some .myriad
   | "undying" => some .undying
   | "extort" => some .extort
+  | "station" => some .station
+  | "sunburst" => some .sunburst
   | "ward" => some .ward
   | "toxic" => some .toxic
   | "protection" => some .protection
@@ -429,6 +442,7 @@ def ofOracle? (raw : String) : Option KeywordTag :=
   | "sneak" => some (.param .sneak)
   | "crew" => some (.param .crew)
   | "teamwork" => some (.param .teamwork)
+  | "beam me up" => some (.param .beamMeUp)
   | _ => none
 
 end KeywordTag
@@ -490,6 +504,7 @@ inductive CastContextPred where
   | impendingPaid (obj : ObjectRef := .this)
   | teamworkPaid (obj : ObjectRef := .this)
   | sneakPaid (obj : ObjectRef := .this)
+  | beamMeUpPaid (obj : ObjectRef := .this)
   | castFrom (zone : ZoneKind) (obj : ObjectRef := .this)
   | manaSpentMatches (pred : ManaSpentPred) (obj : ObjectRef := .this)
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -673,6 +688,7 @@ inductive ValueExpr where
   | manaSymbols (color? : Option Color) (objs : ObjectExpr)
   | manaSpent (obj : ObjectExpr)
   | stepMetric (metric : StepMetric) (v : VarId)
+  | chosenNumberOnSource
   | binary (op : ArithOp) (lhs rhs : ValueExpr)
 
 end
@@ -730,11 +746,12 @@ inductive LibraryPosSpec where
 deriving Repr, Inhabited, BEq
 
 /-- Turn-history event pattern matched by `EventHistoryPred` against `Game.events`
-(14 constructors). -/
+(16 constructors). -/
 inductive EventPattern where
   | permanentEntered (pred : ObjectPred)
   | permanentDied (pred : ObjectPred) (minCount : Nat := 1)
   | permanentLeftBattlefield (pred : ObjectPred)
+  | permanentReturnedToHand (pred : ObjectPred)
   | attackedWith (pred : ObjectPred) (minCount : Nat := 1)
   | castSpell (pred : ObjectPred)
   | drewCard (minCount : Nat := 1)
@@ -746,6 +763,7 @@ inductive EventPattern where
   | activatedLoyalty
   | beheld (subtype : CardSubtype)
   | proliferated
+  | facedDilemma (minCount : Nat := 1)
 deriving Repr, Inhabited, BEq
 
 /-- Turn-history predicate evaluated over `Game.events` (`Condition.turnHistory`). -/
@@ -759,11 +777,12 @@ inductive EventHistoryPred where
   | optionalOnceUnusedThisTurn
 deriving Repr, Inhabited, BEq
 
-/-- Pure boolean condition (CR 603.4 / 608.2 / 611; 14 constructors). -/
+/-- Pure boolean condition (CR 603.4 / 608.2 / 611; 15 constructors). -/
 inductive Condition where
   | cmp (op : CmpOp) (lhs rhs : ValueExpr)
   | exists (objs : ObjectExpr)
   | forAll (objs : ObjectExpr) (pred : ObjectPred)
+  | allShare (objs : ObjectExpr) (char : SharedCharacteristic)
   | playerPred (who : PlayerExpr) (pred : PlayerPred)
   | castPred (pred : CastContextPred)
   | turnHistory (pred : EventHistoryPred)
@@ -778,7 +797,7 @@ inductive Condition where
 deriving Repr, Inhabited, BEq
 
 /-- Symbolic continuous-effect duration (1-to-1 with `EffectDuration`, CR 611.2a–b;
-11 constructors). -/
+12 constructors). -/
 inductive DurationExpr where
   | untilEndOfTurn
   | untilEndOfCombat
@@ -790,6 +809,7 @@ inductive DurationExpr where
   | untilLeavesBattlefield (obj : ObjectExpr)
   | whileHasCounter (obj : ObjectExpr) (kind : CounterKind)
   | whileInZone (obj : ObjectExpr) (zone : ZoneKind)
+  | whileTapped (obj : ObjectExpr)
   | indefinite
 deriving Repr, Inhabited, BEq
 
@@ -1223,6 +1243,7 @@ private partial def applyTcValueExpr (tcs : Array TextChange) : ValueExpr → Va
     .manaSymbols (HasTextChange.applyTextChanges tcs col?) (applyTcObjectExpr tcs objs)
   | .manaSpent obj => .manaSpent (applyTcObjectExpr tcs obj)
   | .stepMetric m v => .stepMetric m v
+  | .chosenNumberOnSource => .chosenNumberOnSource
   | .binary op a b => .binary op (applyTcValueExpr tcs a) (applyTcValueExpr tcs b)
 
 end
@@ -1277,6 +1298,8 @@ instance : HasTextChange EventPattern where
       | .permanentDied op n => .permanentDied (HasTextChange.applyTextChanges tcs op) n
       | .permanentLeftBattlefield op =>
         .permanentLeftBattlefield (HasTextChange.applyTextChanges tcs op)
+      | .permanentReturnedToHand op =>
+        .permanentReturnedToHand (HasTextChange.applyTextChanges tcs op)
       | .attackedWith op n => .attackedWith (HasTextChange.applyTextChanges tcs op) n
       | .castSpell op => .castSpell (HasTextChange.applyTextChanges tcs op)
       | .discardedCard op => .discardedCard (HasTextChange.applyTextChanges tcs op)
@@ -1305,6 +1328,7 @@ private def applyTcCondition (tcs : Array TextChange) : Condition → Condition
   | .exists o => .exists (HasTextChange.applyTextChanges tcs o)
   | .forAll o p =>
     .forAll (HasTextChange.applyTextChanges tcs o) (HasTextChange.applyTextChanges tcs p)
+  | .allShare o ch => .allShare (HasTextChange.applyTextChanges tcs o) ch
   | .playerPred w p =>
     .playerPred (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs p)
   | .castPred cp => .castPred (HasTextChange.applyTextChanges tcs cp)
@@ -1332,6 +1356,7 @@ instance : HasTextChange DurationExpr where
       | .untilLeavesBattlefield o => .untilLeavesBattlefield (HasTextChange.applyTextChanges tcs o)
       | .whileHasCounter o k => .whileHasCounter (HasTextChange.applyTextChanges tcs o) k
       | .whileInZone o z => .whileInZone (HasTextChange.applyTextChanges tcs o) z
+      | .whileTapped o => .whileTapped (HasTextChange.applyTextChanges tcs o)
       | other => other
 
 /-! ### Canonical `ToOracle` Printers -/
@@ -1393,6 +1418,7 @@ private def renderCountRange (cr : CountRange) : String :=
   match cr with
   | .exact 1 => "one"
   | .exact n => englishNumber n
+  | .exactX => "X"
   | .upTo n => s!"up to {englishNumber n}"
   | .between lo hi => s!"{englishNumber lo} to {englishNumber hi}"
   | .anyNumber => "any number of"
@@ -1406,6 +1432,7 @@ private partial def printPlayerFilter (ctx : PrintCtx) (pf : PlayerFilter) : Str
   | .anyPlayer, .isDefendingPlayer => "defending player"
   | .anyPlayer, .isSeat _ | .anyPlayer, .thatPlayer => "that player"
   | .anyPlayer, .matchesExpr who => printPlayerExpr { ctx with capitalize := false } who
+  | .opponent, .matchesExpr (.target _) => "target opponent"
   | _, p => s!"{base} who {printPlayerPred { ctx with capitalize := false } p}"
 
 private partial def printPlayerPred (ctx : PrintCtx) : PlayerPred → String
@@ -1438,6 +1465,9 @@ private partial def printPlayerPred (ctx : PrintCtx) : PlayerPred → String
       | .unspentMana => "unspent mana"
       | .poisonCounters => "poison counters"
       | .opponentsCount => "number of opponents"
+      | .dilemmasFacedThisTurn => "number of dilemmas faced this turn"
+      | .spellsCastThisGame => "number of spells cast this game"
+      | .extraTurnsBegunThisGame => "number of extra turns begun this game"
     s!"has {mS} {renderCmpBound op rhsS}"
   | .controls f minC =>
     match minC with
@@ -1617,6 +1647,9 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
           | .hasType t => some (if ctx.plural && typeIsHead then t.pluralName else t.oracleWord)
           | .hasSubtype (.literal s) => some (if ctx.plural && typeIsHead then s.pluralName else s.englishName)
           | .hasSupertype s => some s.oracleWord
+          | .all #[.hasSupertype s, .hasType t]
+          | .all #[.hasType t, .hasSupertype s] =>
+            some s!"{s.oracleWord} {if ctx.plural && typeIsHead then t.pluralName else t.oracleWord}"
           | .all #[.not (.hasType neg), .hasType t]
           | .all #[.hasType t, .not (.hasType neg)] =>
             some s!"non{neg.oracleWord} {if ctx.plural && typeIsHead then t.pluralName else t.oracleWord}"
@@ -1627,6 +1660,9 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
         let mixedWords := ps.toList.filterMap mixedWord?
         if mixedWords.length == ps.size && !mixedWords.isEmpty then
           typeWords := typeWords ++ [orJoin mixedWords]
+        else if typeWords.isEmpty && subtypeMods.isEmpty && !hasCard && !hasSpell && !hasPermCard && !hasToken then
+          typeWords := typeWords ++
+            [String.intercalate " or " (ps.toList.map (printObjectPredParts ctx · zones))]
         else
           thatClauses := thatClauses ++
             [String.intercalate " or " (ps.toList.map (printObjectPredParts ctx · zones))]
@@ -1829,6 +1865,8 @@ private partial def printValueExpr (ctx : PrintCtx) : ValueExpr → String
     s!"the least {k.oracleWord} among {printObjectExpr { ctx with plural := true, capitalize := false } objs}"
   | .aggregate .countDistinct (.stat k) objs =>
     s!"the number of different {k.pluralOracleWord} among {printObjectExpr { ctx with plural := true, capitalize := false } objs}"
+  | .aggregate .countDistinct .name objs =>
+    s!"the number of differently named {printObjectExpr { ctx with plural := true, capitalize := false } objs}"
   | .aggregate .max _ objs =>
     s!"the greatest value among {printObjectExpr { ctx with plural := true, capitalize := false } objs}"
   | .aggregate .min _ objs =>
@@ -1882,6 +1920,15 @@ private partial def printValueExpr (ctx : PrintCtx) : ValueExpr → String
     | .opponentsCount =>
       if isYou then "the number of opponents you have"
       else s!"the number of opponents {subj} has"
+    | .dilemmasFacedThisTurn =>
+      if isYou then "the number of dilemmas you've faced this turn"
+      else s!"the number of dilemmas {subj} faced this turn"
+    | .spellsCastThisGame =>
+      if isYou then "the number of spells you've cast this game"
+      else s!"the number of spells {subj} cast this game"
+    | .extraTurnsBegunThisGame =>
+      if isYou then "the number of extra turns you've begun this game"
+      else s!"the number of extra turns {subj} begun this game"
   | .maxControlled who pred =>
     let whoS := printPlayerFilter { ctx with plural := false, capitalize := false } who
     let noun := printObjectPredParts { ctx with plural := true, capitalize := false } pred .battlefield
@@ -1900,6 +1947,7 @@ private partial def printValueExpr (ctx : PrintCtx) : ValueExpr → String
   | .stepMetric .countersChanged _ => "the number of counters modified this way"
   | .stepMetric .sumPower _ => "the total power of creatures affected this way"
   | .stepMetric .chosenNumber _ => "the chosen number"
+  | .chosenNumberOnSource => "the chosen number"
   | .binary .mul (.const 2) x => s!"twice {printValueExpr { ctx with capitalize := false } x}"
   | .binary .divFloor x (.const 2) =>
     s!"half {printValueExpr { ctx with capitalize := false } x}, rounded down"
@@ -1974,6 +2022,14 @@ where
     | .permanentLeftBattlefield pred =>
       let noun := printObjectPredParts { ctx with plural := false, capitalize := false } pred .battlefield
       s!"{indefinite noun} {noun} left the battlefield {whenS}"
+    | .permanentReturnedToHand pred =>
+      let noun := printObjectPredParts { ctx with plural := false, capitalize := false } pred .battlefield
+      let toHand :=
+        match who with
+        | { relation := .you, pred := .any } => "your hand"
+        | { relation := .anyPlayer, pred := .any } => "its owner's hand"
+        | pf => s!"{printPlayerFilter { ctx with capitalize := false } pf}'s hand"
+      s!"{indefinite noun} {noun} was returned to {toHand} from the battlefield {whenS}"
     | .attackedWith (.all #[]) 1 => s!"{whoS} attacked {whenS}"
     | .attackedWith pred 1 =>
       let noun := printObjectPredParts { ctx with plural := false, capitalize := false } pred .battlefield
@@ -2002,6 +2058,8 @@ where
     | .activatedLoyalty => s!"{whoS} activated a loyalty ability {whenS}"
     | .beheld sub => s!"{whoS} beheld {indefinite sub.englishName} {sub.englishName} {whenS}"
     | .proliferated => s!"{whoS} proliferated {whenS}"
+    | .facedDilemma 1 => s!"{whoS} faced a dilemma {whenS}"
+    | .facedDilemma n => s!"{whoS} faced {englishNumber n} or more dilemmas {whenS}"
 
 private def printCastPred : CastContextPred → String
   | .wasKicked _ => "this spell was kicked"
@@ -2009,6 +2067,7 @@ private def printCastPred : CastContextPred → String
   | .impendingPaid _ => "its impending cost was paid"
   | .teamworkPaid _ => "its teamwork cost was paid"
   | .sneakPaid _ => "its sneak cost was paid"
+  | .beamMeUpPaid _ => "its beam me up cost was paid"
   | .castFrom z _ => s!"this spell was cast from {renderZonePhrase z}"
   | .manaSpentMatches .fromTreasure _ => "mana from a Treasure was spent to cast this spell"
   | .manaSpentMatches .fromSource _ => "mana produced by this permanent was spent to cast this spell"
@@ -2035,6 +2094,15 @@ private partial def printCondition (ctx : PrintCtx) : Condition → String
     s!"there is {printObjectExpr { ctx with plural := false, capitalize := false } objs}"
   | .forAll objs pred =>
     s!"every {printObjectExpr { ctx with plural := false, capitalize := false } objs} is {printObjectPredParts { ctx with plural := false, capitalize := false } pred .battlefield}"
+  | .allShare objs ch =>
+    let chS :=
+      match ch with
+      | .color => "a color"
+      | .cardType => "a card type"
+      | .creatureType => "a creature type"
+      | .subtype => "a subtype"
+      | .name => "a name"
+    s!"all {printObjectExpr { ctx with plural := true, capitalize := false } objs} share {chS}"
   | .playerPred .you (.hasDesignation .citysBlessing) => "you have the city's blessing"
   | .playerPred .you (.hasDesignation .enduringStory) => "you have an enduring story"
   | .playerPred .you .isMonarch => "you're the monarch"
@@ -2082,6 +2150,8 @@ instance : ToOracle DurationExpr where
         s!"for as long as {printObjectExpr { ctx with capitalize := false } obj} remains exiled"
       | .whileInZone obj z =>
         s!"for as long as {printObjectExpr { ctx with capitalize := false } obj} remains in {renderZonePhrase z}"
+      | .whileTapped obj =>
+        s!"for as long as {printObjectExpr { ctx with capitalize := false } obj} remains tapped"
       | .indefinite => "for the rest of the game"
     applyCap ctx s
 

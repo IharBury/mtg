@@ -118,6 +118,10 @@ inductive Action where
   /-- Cast this card for its sneak cost, returning the unblocked attacker
   `attackerId` you control to hand as part of the cost (MSH sneak). -/
   | castWithSneak (id attackerId : ObjectId)
+  /-- Cast this instant or sorcery card from your graveyard for its beam me up
+  cost, returning creature `creatureId` you control to its owner's hand as part
+  of the cost (CR 702.196a). -/
+  | castWithBeamMeUp (id creatureId : ObjectId)
   /-- Choose a mode of a modal spell or ability (CR 601.2b). -/
   | chooseMode (idx : Nat)
   /-- Announce a value for `{X}` (CR 107.3a / 601.2b). -/

@@ -3833,8 +3833,8 @@ private partial def projectProposedSpellCostStages (g : Game) (prop : ProposedSp
     else
       projectProposedSpellCostStages g prop .sneak grantPriority hadOuter openCont
   | .sneak =>
-    match prop.sneakAttacker with
-    | some a =>
+    match prop.sneakAttacker, prop.beamMeUpCreature with
+    | some a, _ =>
       match g0.withProposalActionM .costAction (fun g => g.paySneak prop.caster prop.spellId a) with
       | .error _ => .failed
       | .ok g1 =>
@@ -3844,7 +3844,17 @@ private partial def projectProposedSpellCostStages (g : Game) (prop : ProposedSp
           .paused (restoreLocal g1)
         else
           projectProposedSpellCostStages (restoreLocal g1) prop .finalize grantPriority hadOuter openCont
-    | none =>
+    | none, some cid =>
+      match g0.withProposalActionM .costAction (fun g => g.payBeamMeUp prop.caster prop.spellId cid) with
+      | .error _ => .failed
+      | .ok g1 =>
+        if let .chooseReplacement .. := g1.pending then
+          .paused (pauseWith g1 .finalize)
+        else if g1.over || g1.livingPlayers.isEmpty || g1.pending != .none || g1.afterRandom != .none then
+          .paused (restoreLocal g1)
+        else
+          projectProposedSpellCostStages (restoreLocal g1) prop .finalize grantPriority hadOuter openCont
+    | none, none =>
       projectProposedSpellCostStages g prop .finalize grantPriority hadOuter openCont
   | .finalize => .ready g
 
@@ -9490,8 +9500,8 @@ partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
         (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
   | .sneak =>
-    match prop.sneakAttacker with
-    | some a =>
+    match prop.sneakAttacker, prop.beamMeUpCreature with
+    | some a, _ =>
       match g0.withProposalActionM .costAction (fun g => g.paySneak prop.caster prop.spellId a) with
       | .ok g =>
         if let .chooseReplacement .. := g.pending then
@@ -9511,7 +9521,27 @@ partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
         g.reverseProposedSpell? (resumeContinuation := true)
           (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?)
-    | none =>
+    | none, some cid =>
+      match g0.withProposalActionM .costAction (fun g => g.payBeamMeUp prop.caster prop.spellId cid) with
+      | .ok g =>
+        if let .chooseReplacement .. := g.pending then
+          let g := g.chainPendingReplacement
+            (.finishProposedSpellCosts .finalize grantPriority hadOuter openCont)
+          return match localOuter? with
+            | some outer => chainOuter g outer
+            | none => g
+        else
+          let g := match localOuter? with
+            | some outer => g.chainPendingReplacement outer
+            | none => g
+          g.finishProposedSpellCosts .finalize grantPriority hadOuterReplacement openCont
+            (followedByFinishChoice := followedByFinishChoice)
+            (followedByExplicitPriority? := followedByExplicitPriority?)
+      | .error _ =>
+        g.reverseProposedSpell? (resumeContinuation := true)
+          (followedByFinishChoice := followedByFinishChoice)
+          (followedByExplicitPriority? := followedByExplicitPriority?)
+    | none, none =>
       g.finishProposedSpellCosts .finalize grantPriority hadOuterReplacement openCont
         (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
@@ -10833,6 +10863,8 @@ def chooseTriggerOr (g : Game) (p : PlayerId) (idx : Nat) : Except String Game :
     let g := g.changes #[
       .pending .none,
       .bindStepOutcome interpChoiceVar { movedCount := idx, succeeded := true }]
+    let g := g.record (GameEvent.facedDilemma g.turnNumber p
+      (source? := g.resolvingAbility.orElse (fun _ => g.resolvingSpell)))
     return g.finishAndGrantPriority
   | _ => throw "Not time to choose"
 
@@ -11766,6 +11798,8 @@ def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except St
         pure (g.logMsg s!"{(g.player chooser).name} chooses {ct}")
       | .asEntersChooseAnchor anch =>
         pure (g.logMsg s!"{(g.player chooser).name} chooses {anch}")
+      | .asEntersChooseNumber nv =>
+        pure (g.logMsg s!"{(g.player chooser).name} chooses {nv}")
       | .entersAsCopyCreatureUntilEot tid =>
         let nm := ((g.findObject? tid).map g.name).getD "a creature"
         pure (g.logMsg s!"{(g.player chooser).name} chooses {nm}")

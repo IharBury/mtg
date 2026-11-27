@@ -110,6 +110,9 @@ structure ProposedSpell where
   /-- The spell is cast for its sneak cost; this unblocked attacker returns
   to hand as the cost is paid (MSH sneak). -/
   sneakAttacker : Option ObjectId := none
+  /-- The spell is cast for its beam me up cost; this creature returns to its
+  owner's hand as the cost is paid (CR 702.196a). -/
+  beamMeUpCreature : Option ObjectId := none
   /-- Cast for an alternative cost such as "without paying its mana cost" (CR 118.9a). -/
   alternativeCost : Bool := false
   /-- Cast as part of a resolving spell or ability (CR 608.2g). -/

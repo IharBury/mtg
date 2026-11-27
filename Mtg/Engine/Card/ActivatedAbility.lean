@@ -201,6 +201,9 @@ def isCrew (ab : ActivatedAbility) : Bool :=
   | some (.crew _) => true
   | _ => ab.cost.crewPower?.isSome
 
+def isStation (ab : ActivatedAbility) : Bool :=
+  ab.tag? == some .station
+
 /-- True when any cost reduction on this ability depends on a chosen target. -/
 def hasTargetCostReduction (ab : ActivatedAbility) : Bool :=
   ab.costReductions.any ActivationCostReduction.mentionsTarget
@@ -298,6 +301,18 @@ def crewAbility (n : Nat) : ActivatedAbility :=
     }
     tag? := some (.crew n) }
 
+/-- The station ability of a station card (CR 702.184a):
+`"Tap another untapped creature you control: Put a number of charge counters on
+this permanent equal to the tapped creature's power. Activate only as a sorcery."` -/
+def stationAbility : ActivatedAbility :=
+  { cost := CostSpec.ofItem (.tapObjects (.count (.const 1))
+      (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you]))
+    effect := {
+      body := .permanent (.modifyCounters (.put .charge (.objectStat .power .costPaidObjects)) .this)
+    }
+    timing := .sorcery
+    tag? := some .station }
+
 /-- Baron Helmut Zemo's boast ability (CR 702.142a: activate only if this
 creature attacked this turn and only once each turn). -/
 def zemoBoastAbility : ActivatedAbility :=
@@ -347,15 +362,20 @@ private def renderCostReduction (ctx : PrintCtx) (r : ActivationCostReduction) :
     else ""
   | .counterCount (some .plusOnePlusOne) (.target 0), none =>
     "This ability costs {1} less to activate for each +1/+1 counter on that creature."
+  | .const n, none =>
+    s!"This ability costs \{{n.toNat}} less to activate."
   | amt, none =>
-    s!"This ability costs \{{toOracleStr amt { ctx with capitalize := false }}} less to activate."
+    s!"This ability costs \{X} less to activate, where X is {toOracleStr amt { ctx with capitalize := false }}."
+  | .const n, some c =>
+    s!"This ability costs \{{n.toNat}} less to activate if {toOracleStr c { ctx with capitalize := false }}."
   | amt, some c =>
-    s!"This ability costs \{{toOracleStr amt { ctx with capitalize := false }}} less to activate if {toOracleStr c { ctx with capitalize := false }}."
+    s!"This ability costs \{X} less to activate if {toOracleStr c { ctx with capitalize := false }}, where X is {toOracleStr amt { ctx with capitalize := false }}."
 
-/-- Canonical Oracle rendering of an `ActivatedAbility` (CR 602.1 / 605 / 606 / 702.6,29,122,142,177,193). -/
+/-- Canonical Oracle rendering of an `ActivatedAbility` (CR 602.1 / 605 / 606 / 702.6,29,122,142,177,184,193). -/
 def toOracle (ctx : PrintCtx) (ab : ActivatedAbility) : String :=
   match ab.tag? with
   | some (.crew n) => s!"Crew {n}"
+  | some .station => "Station"
   | _ =>
   if ab.isEquip then
     let pay := if ab.cost.payLife != 0 then s!", Pay {ab.cost.payLife} life" else ""
@@ -453,7 +473,9 @@ def toOracle (ctx : PrintCtx) (ab : ActivatedAbility) : String :=
         if !ab.isExhaust && !ab.isPowerUp then
           if n == 1 then clauses := clauses ++ ["Activate only once."]
           else clauses := clauses ++ [s!"Activate no more than {englishNumber n} times."]
-      if ab.activeZones == #[.graveyard] && !ab.cost.exileSourceFromGraveyard && !rawBody.contains "graveyard" then
+      let costFromGy := ab.cost.exileSourceFromGraveyard ||
+        ab.cost.items.any (fun | .putOnLibrary _ zs .self _ => zs.zones.contains .graveyard | _ => false)
+      if ab.activeZones == #[.graveyard] && !costFromGy && !rawBody.contains "graveyard" then
         clauses := clauses ++ ["Activate only from your graveyard."]
       else if ab.activeZones == #[.hand] && !ab.isCycling && !ab.cost.discardSource && !ab.cost.exileSourceFromHand then
         clauses := clauses ++ ["Activate only from your hand."]

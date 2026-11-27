@@ -31,6 +31,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
     | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
   | .castWithSneak id attackerId => g.castSpell p id (sneakAttacker := some attackerId)
+  | .castWithBeamMeUp id creatureId => g.castSpell p id (beamMeUpCreature := some creatureId)
   | .chooseMode idx =>
     match g.pending with
     | .resolutionChoice .. => g.answerResolutionChoice p (.mode idx)

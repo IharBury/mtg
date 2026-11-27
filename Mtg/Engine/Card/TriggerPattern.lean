@@ -215,6 +215,7 @@ inductive PlayerActionTrigger where
   | chooseRingBearer
   | manaAdded
   | losesGame
+  | faceDilemma
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Activated-ability category watched by `TriggerPattern.activateAbility`. -/
@@ -499,6 +500,7 @@ def label : TriggerPattern → String
   | .playerAction _ .chooseRingBearer => "Ring-bearer trigger"
   | .playerAction _ .manaAdded => "mana trigger"
   | .playerAction _ .losesGame => "player-loses trigger"
+  | .playerAction _ .faceDilemma => "face-dilemma trigger"
   | .stepBegins .upkeep _ => "upkeep trigger"
   | .stepBegins .draw _ => "draw-step trigger"
   | .stepBegins .precombatMain _ => "main-phase trigger"
@@ -855,6 +857,7 @@ private def subjPhrase (ctx : PrintCtx) (pred : ObjectPred) (plural : Bool := fa
   match pred with
   | .sameAs .this => ctx.selfRef
   | .sameAs .attachedHost => "enchanted creature"
+  | .sameAs (.target _) => "it"
   | .all #[.hasType .creature, .controlledBy .you,
       .hasAttachment { zones := { zones := #[.battlefield], owner := .any }, pred := .hasSubtype (.literal .equipment) }] =>
     if plural then "equipped creatures you control" else "an equipped creature you control"
@@ -1173,6 +1176,7 @@ def renderClause (ctx : PrintCtx) (grouping : BatchGrouping := .perOccurrence)
     | .chooseRingBearer => s!"{w} {pluralVerb who "chooses" "choose"} a creature as your Ring-bearer"
     | .manaAdded => s!"{w} {pluralVerb who "adds" "add"} mana"
     | .losesGame => s!"{w} {pluralVerb who "loses" "lose"} the game"
+    | .faceDilemma => s!"{w} {pluralVerb who "faces" "face"} a dilemma"
   | .stepBegins step who =>
     match step, who with
     | .upkeep, .player pf =>
@@ -1218,7 +1222,11 @@ def renderClause (ctx : PrintCtx) (grouping : BatchGrouping := .perOccurrence)
     | .playerAction who .scry, .playerAction _ .surveil =>
       s!"{playerClause ctx who} scry or surveil"
     | _, _ =>
-      s!"{a.renderClause ctx grouping limit} or {b.renderClause ctx grouping limit}"
+      let isStepB := match b with | .stepBegins _ _ => true | _ => false
+      if isStepB then
+        s!"{a.renderClause ctx grouping limit} and at {b.renderClause ctx grouping limit}"
+      else
+        s!"{a.renderClause ctx grouping limit} or {b.renderClause ctx grouping limit}"
 
 instance : ToOracle TriggerPattern where
   toOracle ctx p :=

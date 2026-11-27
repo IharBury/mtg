@@ -864,7 +864,7 @@ def phaseInControlled (g : Game) (p : PlayerId) (includeTeammates : Bool := fals
       return (g.controllerOfAt o 0 <|> fallbackCtrlOf o, none)
     let targetIds :=
       g.objects.filterMap fun o =>
-        if o.zone == .battlefield && o.status.phasedOut && g.canPhaseInDirectly o then
+        if o.zone == .battlefield && o.status.phasedOut && g.canPhaseInDirectly o && !g.cantPhaseIn o then
           let (ctrl?, rawSinceIdx?) := phaseOutControllerOf o
           let sinceIdx? : Option Nat :=
             match o.status.phasedWith with

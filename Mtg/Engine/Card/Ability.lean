@@ -58,6 +58,8 @@ inductive ActivationMechanicTag where
   | exhaust
   /-- Crew N (CR 702.122a). -/
   | crew (minPower : Nat)
+  /-- Station (CR 702.184a). -/
+  | station
 deriving Repr, Inhabited, BEq
 
 instance : HasTextChange ActivationMechanicTag where
@@ -123,7 +125,7 @@ instance : HasTextChange StaticSubject where
       | .matching f => .matching (HasTextChange.applyTextChanges tcs f)
 
 /-- Rule-modifying static abilities affecting players (CR 104 / 119.7–8 / 305.2 /
-402.3 / 601.2 / 602.5 / 702.11c / 702.16j / 702.131b / 724; 14 constructors). -/
+402.3 / 601.2 / 602.5 / 702.11c / 702.16j / 702.131b / 724; 17 constructors). -/
 inductive StaticPlayerRule where
   /-- Maximum hand size: `none` = no maximum hand size; `some n` = `n` (CR 402.3). -/
   | maxHandSize (who : PlayerFilter := .you) (limit? : Option Nat)
@@ -133,6 +135,8 @@ inductive StaticPlayerRule where
   | cantGainLife (who : PlayerFilter)
   /-- Matching players can't lose the game (CR 104.3). -/
   | cantLoseGame (who : PlayerFilter)
+  /-- Matching players don't lose the game for having 0 or less life (CR 104.3b). -/
+  | dontLoseForZeroLife (who : PlayerFilter)
   /-- Matching players can't win the game (CR 104.2). -/
   | cantWinGame (who : PlayerFilter)
   /-- Matching players have hexproof (optionally from `from?`, CR 702.11c–d). -/
@@ -141,6 +145,10 @@ inductive StaticPlayerRule where
   | protectionFrom (who : PlayerFilter) (quality : ProtectionQuality)
   /-- Matching players can't cast matching spells (CR 601.2 / 101.2). -/
   | cantCastSpells (who : PlayerFilter) (spellPred : ObjectPred := .anyObject)
+  /-- Matching players can't sacrifice matching permanents (CR 701.21 / 101.2). -/
+  | cantSacrifice (who : PlayerFilter) (pred : ObjectPred)
+  /-- Matching players can't attack (CR 508.1c / 101.2). -/
+  | cantAttack (who : PlayerFilter)
   /-- Matching players may activate abilities of matching permanents as though they had haste. -/
   | activateAsThoughHaste (who : PlayerFilter := .you) (scope : ObjectFilter)
   /-- Each matching ability of matching permanents may be activated `extra` additional time(s). -/
@@ -164,6 +172,7 @@ instance : HasTextChange StaticPlayerRule where
       | .additionalLands w n => .additionalLands (HasTextChange.applyTextChanges tcs w) n
       | .cantGainLife w => .cantGainLife (HasTextChange.applyTextChanges tcs w)
       | .cantLoseGame w => .cantLoseGame (HasTextChange.applyTextChanges tcs w)
+      | .dontLoseForZeroLife w => .dontLoseForZeroLife (HasTextChange.applyTextChanges tcs w)
       | .cantWinGame w => .cantWinGame (HasTextChange.applyTextChanges tcs w)
       | .hexproof w fq =>
         .hexproof (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs fq)
@@ -171,6 +180,9 @@ instance : HasTextChange StaticPlayerRule where
         .protectionFrom (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs q)
       | .cantCastSpells w p =>
         .cantCastSpells (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs p)
+      | .cantSacrifice w p =>
+        .cantSacrifice (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs p)
+      | .cantAttack w => .cantAttack (HasTextChange.applyTextChanges tcs w)
       | .activateAsThoughHaste w sc =>
         .activateAsThoughHaste (HasTextChange.applyTextChanges tcs w)
           (HasTextChange.applyTextChanges tcs sc)
@@ -190,11 +202,16 @@ counterability, opening-hand placement, and commander eligibility
 inductive StaticPlayRule where
   /-- Players may look at the top card of their library any time (CR 401.2). -/
   | lookAtTopOfLibrary (who : PlayerFilter := .you)
-  /-- Players may play lands (`landsAllowed`) or cast matching spells from `fromZone`. -/
+  /-- Players may play lands (`landsAllowed`) or cast matching spells from `fromZone`
+  (and optionally `secondZone?`), optionally once each turn, with an entry counter,
+  or via beam me up (CR 702.196). -/
   | mayPlayFrom (who : PlayerFilter := .you) (fromZone : ZoneKind)
       (pred : ObjectPred := .anyObject) (landsAllowed : Bool := false)
       (linkedExile : Bool := false) (castAnyColorMana : Bool := false)
-      (freeCast : Bool := false)
+      (freeCast : Bool := false) (onceEachTurn : Bool := false)
+      (secondZone? : Option ZoneKind := none)
+      (enterCounter? : Option CounterKind := none)
+      (asBeamMeUp : Bool := false)
   /-- Players may cast matching spells (or this spell when `thisSpell := true`) as though
   they had flash (CR 601.3b). -/
   | castAsThoughFlash (who : PlayerFilter := .you) (spellPred : ObjectPred := .anyObject)
@@ -222,9 +239,9 @@ instance : HasTextChange StaticPlayRule where
     else
       match r with
       | .lookAtTopOfLibrary w => .lookAtTopOfLibrary (HasTextChange.applyTextChanges tcs w)
-      | .mayPlayFrom w z p la le anyC free =>
+      | .mayPlayFrom w z p la le anyC free once z2? ec? bmu =>
         .mayPlayFrom (HasTextChange.applyTextChanges tcs w) z
-          (HasTextChange.applyTextChanges tcs p) la le anyC free
+          (HasTextChange.applyTextChanges tcs p) la le anyC free once z2? ec? bmu
       | .castAsThoughFlash w p ts nth =>
         .castAsThoughFlash (HasTextChange.applyTextChanges tcs w)
           (HasTextChange.applyTextChanges tcs p) ts nth
@@ -240,10 +257,12 @@ instance : HasTextChange StaticPlayRule where
           (HasTextChange.applyTextChanges tcs p)
 
 /-- Rule-modifying static abilities affecting combat declarations and combat damage
-assignment (CR 508 / 509 / 510; 16 constructors). -/
+assignment (CR 508 / 509 / 510; 17 constructors). -/
 inductive StaticCombatRule where
   /-- Matching creatures can't attack (CR 508.1c). -/
   | cantAttack (subject : StaticSubject := .self)
+  /-- Matching creatures can't attack alone (CR 508.1c). -/
+  | cantAttackAlone (subject : StaticSubject := .self)
   /-- Matching creatures can't attack unless `unlessCond` holds (CR 508.1c). -/
   | cantAttackUnless (subject : StaticSubject := .self) (unlessCond : Condition)
   /-- Creatures matching `attackerPred` can't attack `defending` unless their controller
@@ -289,6 +308,7 @@ instance : HasTextChange StaticCombatRule where
     else
       match r with
       | .cantAttack s => .cantAttack (HasTextChange.applyTextChanges tcs s)
+      | .cantAttackAlone s => .cantAttackAlone (HasTextChange.applyTextChanges tcs s)
       | .cantAttackUnless s c =>
         .cantAttackUnless (HasTextChange.applyTextChanges tcs s)
           (HasTextChange.applyTextChanges tcs c)
@@ -324,9 +344,10 @@ instance : HasTextChange StaticCombatRule where
 /-- Rule-modifying static abilities affecting triggered abilities (CR 603.2 / 603.2d;
 2 constructors). -/
 inductive StaticTriggerRule where
-  /-- If a triggered ability of a permanent matching `sourceScope` triggers, it triggers
-  `extra` additional time(s) (CR 603.2d). -/
+  /-- If a triggered ability of a permanent matching `sourceScope` triggers
+  (optionally caused by `causeEvent?`), it triggers `extra` additional time(s) (CR 603.2d). -/
   | extraTrigger (sourceScope : ObjectFilter) (extra : Nat := 1)
+      (causeEvent? : Option EventPattern := none)
   /-- Permanents matching `enteringScope` entering the battlefield don't cause abilities
   to trigger (CR 603.2 / 101.2). -/
   | suppressEnteringTriggers (enteringScope : ObjectFilter)
@@ -337,19 +358,31 @@ instance : HasTextChange StaticTriggerRule where
     if tcs.isEmpty then r
     else
       match r with
-      | .extraTrigger sc n => .extraTrigger (HasTextChange.applyTextChanges tcs sc) n
+      | .extraTrigger sc n ev? =>
+        .extraTrigger (HasTextChange.applyTextChanges tcs sc) n
+          (HasTextChange.applyTextChanges tcs ev?)
       | .suppressEnteringTriggers sc =>
         .suppressEnteringTriggers (HasTextChange.applyTextChanges tcs sc)
 
 /-- Rule-modifying static abilities affecting untap rules, phase locks, state-based
-actions, and counter placement prohibitions (CR 122.1 / 502.3 / 704.5i,j; 6 constructors). -/
+actions, beam me up, phasing, targeting, and counter placement prohibitions
+(CR 122.1 / 502.3 / 702.26 / 702.196b / 704.5i,j; 10 constructors). -/
 inductive StaticGameRule where
   /-- Matching permanents don't untap during their controller's untap step, optionally
   unless `unlessCond?` holds (CR 502.3). -/
   | doesntUntapDuringUntapStep (subject : StaticSubject := .self)
       (unlessCond? : Option Condition := none)
+  /-- Matching permanents may choose not to untap during their controller's untap step (CR 502.3). -/
+  | mayChooseNotToUntap (subject : StaticSubject := .self)
   /-- Matching permanents can't become untapped (CR 101.2 / 502.3). -/
   | cantBecomeUntapped (subject : StaticSubject := .self)
+  /-- Matching permanents can't be beamed up (CR 702.196b). -/
+  | cantBeBeamedUp (subject : StaticSubject := .self)
+  /-- Matching permanents can't phase in (CR 702.26). -/
+  | cantPhaseIn (scope : ObjectFilter)
+  /-- Matching permanents can't be targeted by matching spells/abilities (CR 115 / 101.2). -/
+  | cantBeTargetedBy (subject : StaticSubject := .self) (sourcePred : ObjectPred)
+      (controller : PlayerFilter) (abilitiesOnly : Bool := false)
   /-- During `phase`, matching players can't cast spells or activate non-mana abilities. -/
   | lockNonManaDuringPhase (phase : Phase) (who : PlayerFilter := .any)
   /-- Planeswalkers matching `scope` aren't put into their owners' graveyards for having
@@ -369,7 +402,14 @@ instance : HasTextChange StaticGameRule where
       | .doesntUntapDuringUntapStep s c? =>
         .doesntUntapDuringUntapStep (HasTextChange.applyTextChanges tcs s)
           (HasTextChange.applyTextChanges tcs c?)
+      | .mayChooseNotToUntap s => .mayChooseNotToUntap (HasTextChange.applyTextChanges tcs s)
       | .cantBecomeUntapped s => .cantBecomeUntapped (HasTextChange.applyTextChanges tcs s)
+      | .cantBeBeamedUp s => .cantBeBeamedUp (HasTextChange.applyTextChanges tcs s)
+      | .cantPhaseIn sc => .cantPhaseIn (HasTextChange.applyTextChanges tcs sc)
+      | .cantBeTargetedBy s sp ctrl abOnly =>
+        .cantBeTargetedBy (HasTextChange.applyTextChanges tcs s)
+          (HasTextChange.applyTextChanges tcs sp)
+          (HasTextChange.applyTextChanges tcs ctrl) abOnly
       | .lockNonManaDuringPhase ph w =>
         .lockNonManaDuringPhase ph (HasTextChange.applyTextChanges tcs w)
       | .planeswalkersSurviveZeroLoyalty sc =>
@@ -464,7 +504,7 @@ def flatten : RuleModification → Array RuleModification
 
 end RuleModification
 
-/-- Choice made as a permanent enters the battlefield (CR 614.1c / 614.12; 6 constructors). -/
+/-- Choice made as a permanent enters the battlefield (CR 614.1c / 614.12; 7 constructors). -/
 inductive AsEntersChoiceKind where
   | color
   | creatureType
@@ -472,6 +512,7 @@ inductive AsEntersChoiceKind where
   | nonlandCardName
   | oddOrEven
   | namedAnchors (options : Array String)
+  | numberRange (lo hi : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-! ### 3. Predefined Tokens & One-Shot Instruction Sub-Families (Every Enum ≤ 16 Ctors) -/
@@ -560,6 +601,12 @@ structure GrantPlayPermSpec where
   maxTotalManaValue? : Option ValueExpr := none
   condition? : Option Condition := none
   filter? : Option ObjectPred := none
+  /-- Extra generic mana cost added to spells cast via this permission (e.g. Zero, Incorporeal Sensate). -/
+  extraGenericCost : Nat := 0
+  /-- Player granted the permission (`none` = controller of the resolving effect). -/
+  beneficiary? : Option PlayerExpr := none
+  /-- True when mana of any type (including colorless) may be spent (CR 106.1a). -/
+  anyManaType : Bool := false
 deriving Repr, Inhabited, BEq
 
 instance : HasTextChange GrantPlayPermSpec where
@@ -570,7 +617,8 @@ instance : HasTextChange GrantPlayPermSpec where
         duration := HasTextChange.applyTextChanges tcs g.duration
         maxTotalManaValue? := HasTextChange.applyTextChanges tcs g.maxTotalManaValue?
         condition? := HasTextChange.applyTextChanges tcs g.condition?
-        filter? := HasTextChange.applyTextChanges tcs g.filter? }
+        filter? := HasTextChange.applyTextChanges tcs g.filter?
+        beneficiary? := HasTextChange.applyTextChanges tcs g.beneficiary? }
 
 /-- Blink / temporary exile return specification on `MoveMods` (4 constructors). -/
 inductive DelayedReturnSpec where
@@ -800,15 +848,17 @@ instance : HasTextChange LifeOp where
       | .lose w a => .lose (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs a)
       | .set w a => .set (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs a)
 
-/-- Counter modification mode for `PermanentOp.modifyCounters` (CR 122; 7 constructors). -/
+/-- Counter modification mode for `PermanentOp.modifyCounters` (CR 122; 9 constructors). -/
 inductive CounterModifyMode where
   | put (kind : CounterKind) (count : ValueExpr)
+  | distribute (kind : CounterKind) (count : ValueExpr)
   | remove (kind? : Option CounterKind) (count : ExprCountRange)
   | moveAll (fromObj : ObjectExpr) (kind? : Option CounterKind := none)
   | moveOne (fromObj : ObjectExpr) (kind : CounterKind)
   | copyFromLki (fromObj : ObjectExpr)
   | copyMissingKeywords (fromObj : ObjectExpr)
   | double (kind? : Option CounterKind := none)
+  | putAnotherOfChosen
 deriving Repr, Inhabited, BEq
 
 instance : HasTextChange CounterModifyMode where
@@ -817,14 +867,16 @@ instance : HasTextChange CounterModifyMode where
     else
       match m with
       | .put k c => .put k (HasTextChange.applyTextChanges tcs c)
+      | .distribute k c => .distribute k (HasTextChange.applyTextChanges tcs c)
       | .remove k? c => .remove k? (HasTextChange.applyTextChanges tcs c)
       | .moveAll src k? => .moveAll (HasTextChange.applyTextChanges tcs src) k?
       | .moveOne src k => .moveOne (HasTextChange.applyTextChanges tcs src) k
       | .copyFromLki src => .copyFromLki (HasTextChange.applyTextChanges tcs src)
       | .copyMissingKeywords src => .copyMissingKeywords (HasTextChange.applyTextChanges tcs src)
       | .double k? => .double k?
+      | .putAnotherOfChosen => .putAnotherOfChosen
 
-/-- Permanent-state actions aligned with `RulesEvent.permanent` (CR 701; 7 constructors). -/
+/-- Permanent-state actions aligned with `RulesEvent.permanent` (CR 701; 8 constructors). -/
 inductive PermanentOp where
   | setTapped (objs : ObjectExpr) (tapped : Bool) (choice? : Option MoveChoiceSpec := none)
   | modifyCounters (mode : CounterModifyMode) (objs : ObjectExpr)
@@ -834,6 +886,9 @@ inductive PermanentOp where
   | turnFaceUp (objs : ObjectExpr)
   | phaseOut (objs : ObjectExpr) (untilPlayerNextTurn? : Option PlayerExpr := none)
   | setDesignation (objs : ObjectExpr) (tag : PermanentDesignationTag) (value : Bool := true)
+  /-- CR 701.72: Assimilate permanent(s) or permanent card(s) (put onto battlefield /
+  gain control with a +1/+1 counter; becomes a Borg artifact creature). -/
+  | assimilate (objs : ObjectExpr) (choice? : Option MoveChoiceSpec := none)
 deriving Repr, Inhabited, BEq
 
 instance : HasTextChange PermanentOp where
@@ -854,6 +909,8 @@ instance : HasTextChange PermanentOp where
         .phaseOut (HasTextChange.applyTextChanges tcs o) (HasTextChange.applyTextChanges tcs p?)
       | .setDesignation o tag v =>
         .setDesignation (HasTextChange.applyTextChanges tcs o) tag v
+      | .assimilate o ch? =>
+        .assimilate (HasTextChange.applyTextChanges tcs o) (HasTextChange.applyTextChanges tcs ch?)
 
 /-- Card source inspected by `PlayerOp.inspectLibrary` (5 constructors). -/
 inductive InspectSource where
@@ -976,11 +1033,12 @@ instance : HasTextChange SearchLibrarySpec where
           (HasTextChange.applyTextChanges tcs d, HasTextChange.applyTextChanges tcs m)
         untapIf? := HasTextChange.applyTextChanges tcs s.untapIf? }
 
-/-- Player status/designation granted by `PlayerOp.setStatus` (3 constructors). -/
+/-- Player status/designation granted by `PlayerOp.setStatus` (4 constructors). -/
 inductive PlayerStatusKind where
   | designation (d : PlayerDesignation)
   | monarch
   | winGame
+  | loseGame
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Resolution-time choice bound into `stepEnv` via `Instruction.bind` (4 constructors). -/
@@ -1000,7 +1058,7 @@ instance : HasTextChange ResolutionChoiceKind where
       | other => other
 
 /-- Player actions aligned with `RulesEvent.player` (CR 106 / 121 / 701 / 726;
-16 constructors). -/
+17 constructors). -/
 inductive PlayerOp where
   | drawCards (who : PlayerExpr) (amount : ValueExpr)
   | scry (who : PlayerExpr) (amount : ValueExpr)
@@ -1017,6 +1075,7 @@ inductive PlayerOp where
   | amass (who : PlayerExpr) (subtype : CardSubtype) (amount : ValueExpr)
   | connive (objs : ObjectExpr)
   | empowerPlaneswalker (subtype : CardSubtype) (amount : ValueExpr)
+  | discover (who : PlayerExpr) (amount : ValueExpr)
   | setStatus (who : PlayerExpr) (kind : PlayerStatusKind)
       (condition? : Option Condition := none)
   | choose (who : PlayerExpr) (kind : ResolutionChoiceKind)
@@ -1066,6 +1125,8 @@ instance : HasTextChange PlayerOp where
       | .empowerPlaneswalker sub a =>
         .empowerPlaneswalker (HasTextChange.applyTextChanges tcs sub)
           (HasTextChange.applyTextChanges tcs a)
+      | .discover w a =>
+        .discover (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs a)
       | .setStatus w k c? =>
         .setStatus (HasTextChange.applyTextChanges tcs w) k (HasTextChange.applyTextChanges tcs c?)
       | .choose w k =>
@@ -1177,17 +1238,20 @@ inductive TokenSpec where
   | custom (spec : CustomTokenSpec)
   | copyOf (ref : ObjectExpr) (mods : Array CopyModification)
 
-/-- Static replacement or prevention effect specification (CR 614 / 615; 20 constructors). -/
+/-- Static replacement or prevention effect specification (CR 614 / 615; 24 constructors). -/
 inductive StaticReplacementSpec where
   | entersTapped (subject : StaticSubject := .self) (unlessCond? : Option Condition := none)
   | entersTappedUnlessPay (cost : CostSpec)
+  | entersUntapped (scope : ObjectFilter)
+  | entersTappedAndAttacking (scope : ObjectFilter)
   | entersWithCounters (subject : StaticSubject := .self) (kind : CounterKind)
       (count : ValueExpr) (additional : Bool := false)
   | entersWithDesignation (tag : PermanentDesignationTag)
   | asEntersChoose (kind : AsEntersChoiceKind)
   | asEntersMayCopy (copyFilter : ObjectFilter) (duration : DurationExpr := .indefinite)
-      (mods : Array CopyModification)
+      (mods : Array CopyModification) (copyCounters : Bool := false)
   | exileInsteadOfDying (scope : ObjectFilter) (bonusToken? : Option TokenSpec)
+  | saveFromDestroyRemoveCounters (scope : ObjectFilter) (kind : CounterKind)
   | multiplyTokens (who : PlayerFilter := .you) (factor : Nat := 2)
   | extraTokenWith (who : PlayerFilter := .you) (triggerPred : ObjectPred)
       (extraToken : TokenSpec) (count : Nat := 1)
@@ -1198,8 +1262,9 @@ inductive StaticReplacementSpec where
   | extraDrawOnConnive (who : PlayerFilter := .you) (scope : ObjectFilter)
       (extraCards : Nat := 1)
   | modifyCountersPut (scope : ObjectFilter) (kind? : Option CounterKind := none)
-      (byPlayer? : Option PlayerFilter := none) (addCount : Nat := 1)
+      (byPlayer? : Option PlayerFilter := none) (addCount : Nat := 1) (multFactor : Nat := 1)
   | preventDamage (subject : StaticSubject := .self) (amount? : Option ValueExpr := none)
+  | preventDamageToPlayer (who : PlayerFilter) (amount? : Option ValueExpr := none)
   | modifyDamage (sourceScope : ObjectFilter) (noncombatOnly : Bool := false)
       (recipient : RecipientFilter := .any) (multiplier : Nat := 1)
       (addAmount : ValueExpr := .const 0)
@@ -1448,17 +1513,21 @@ private partial def applyTcReplacementSpec (tcs : Array TextChange) :
   | .entersTapped s c? =>
     .entersTapped (HasTextChange.applyTextChanges tcs s) (HasTextChange.applyTextChanges tcs c?)
   | .entersTappedUnlessPay cs => .entersTappedUnlessPay (HasTextChange.applyTextChanges tcs cs)
+  | .entersUntapped sc => .entersUntapped (HasTextChange.applyTextChanges tcs sc)
+  | .entersTappedAndAttacking sc => .entersTappedAndAttacking (HasTextChange.applyTextChanges tcs sc)
   | .entersWithCounters s k v add =>
     .entersWithCounters (HasTextChange.applyTextChanges tcs s) k
       (HasTextChange.applyTextChanges tcs v) add
   | .entersWithDesignation tag => .entersWithDesignation tag
   | .asEntersChoose kind => .asEntersChoose kind
-  | .asEntersMayCopy f dur mods =>
+  | .asEntersMayCopy f dur mods cc =>
     .asEntersMayCopy (HasTextChange.applyTextChanges tcs f)
-      (HasTextChange.applyTextChanges tcs dur) (mods.map (applyTcCopyMod tcs))
+      (HasTextChange.applyTextChanges tcs dur) (mods.map (applyTcCopyMod tcs)) cc
   | .exileInsteadOfDying sc tok? =>
     .exileInsteadOfDying (HasTextChange.applyTextChanges tcs sc)
       (tok?.map (applyTcTokenSpec tcs))
+  | .saveFromDestroyRemoveCounters sc k =>
+    .saveFromDestroyRemoveCounters (HasTextChange.applyTextChanges tcs sc) k
   | .multiplyTokens w n => .multiplyTokens (HasTextChange.applyTextChanges tcs w) n
   | .extraTokenWith w tp tok n =>
     .extraTokenWith (HasTextChange.applyTextChanges tcs w)
@@ -1470,11 +1539,14 @@ private partial def applyTcReplacementSpec (tcs : Array TextChange) :
   | .extraDrawOnConnive w sc n =>
     .extraDrawOnConnive (HasTextChange.applyTextChanges tcs w)
       (HasTextChange.applyTextChanges tcs sc) n
-  | .modifyCountersPut sc k? bp? n =>
+  | .modifyCountersPut sc k? bp? n mult =>
     .modifyCountersPut (HasTextChange.applyTextChanges tcs sc) k?
-      (HasTextChange.applyTextChanges tcs bp?) n
+      (HasTextChange.applyTextChanges tcs bp?) n mult
   | .preventDamage s amt? =>
     .preventDamage (HasTextChange.applyTextChanges tcs s) (HasTextChange.applyTextChanges tcs amt?)
+  | .preventDamageToPlayer w amt? =>
+    .preventDamageToPlayer (HasTextChange.applyTextChanges tcs w)
+      (HasTextChange.applyTextChanges tcs amt?)
   | .modifyDamage sc nc rec mult add =>
     .modifyDamage (HasTextChange.applyTextChanges tcs sc) nc
       (HasTextChange.applyTextChanges tcs rec) mult (HasTextChange.applyTextChanges tcs add)

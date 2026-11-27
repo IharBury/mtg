@@ -80,6 +80,8 @@ structure Status where
   chosenAnchor : Option String := none
   /-- Card type chosen as this permanent entered (Serra's Emissary). -/
   chosenCardType : Option CardType := none
+  /-- Number chosen as this permanent entered (CR 614.12). -/
+  chosenNumber : Option Int := none
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -110,6 +112,8 @@ namespace Status
 @[inline] def story (s : Status) : Nat := s.counters.count .story
 @[inline] def time (s : Status) : Nat := s.counters.count .time
 @[inline] def poison (s : Status) : Nat := s.counters.count .poison
+@[inline] def peace (s : Status) : Nat := s.counters.count .peace
+@[inline] def promotion (s : Status) : Nat := s.counters.count .promotion
 
 /-- True when this permanent has a counter (CR 122.1). -/
 def hasCounters (s : Status) : Bool :=

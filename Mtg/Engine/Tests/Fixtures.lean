@@ -70,6 +70,7 @@ import Mtg.Engine.Tests.ActivatedMana
 import Mtg.Engine.Tests.StaticAbilities
 import Mtg.Engine.Tests.TriggeredAbilities
 import Mtg.Engine.Tests.Interpreter
+import Mtg.Engine.Tests.StarTrek
 
 /-!
 # Engine Test Fixtures

@@ -169,7 +169,8 @@ inductive CostKind where
   | bargain             -- CR 702.166
   | ward                -- CR 702.21
   | teamwork            -- CR 702.194
-  | returnToHand        -- CR 118.3 / 702.190a (sneak / return permanent to hand)
+  | returnToHand        -- CR 118.3 / 702.190a / 702.196a (sneak / beam me up / return permanent to hand)
+  | putOnLibrary        -- CR 118.3 / 401 (put a card on the top or bottom of a library as a cost)
   | putCounters         -- CR 118.3 / 122.1
   | cycle               -- CR 702.29
 deriving DecidableEq, Repr, Inhabited, BEq

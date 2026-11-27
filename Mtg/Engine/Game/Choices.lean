@@ -741,12 +741,17 @@ still pay its source-bound costs (CR 602.2b / 606.3–606.4 / 702.37e / 734.1). 
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.sourceId with
   | none =>
-    prop.sneakAttacker.all fun aid =>
+    (prop.sneakAttacker.all fun aid =>
       g.sneakPaid prop.spellId ||
         (g.canCastForSneak prop.caster &&
           (g.findObject? aid).any (fun a =>
             a.isOnBattlefield && g.isCreature a && g.controlledBy a prop.caster &&
-              a.status.attacking && !a.status.blocked))
+              a.status.attacking && !a.status.blocked))) &&
+    (prop.beamMeUpCreature.all fun cid =>
+      GameEvent.beamMeUpPaid g.events prop.spellId ||
+        (g.findObject? cid).any (fun c =>
+          c.isOnBattlefield && g.isCreature c && g.controlledBy c prop.caster &&
+            !g.cantBeBeamedUp c))
   | some sid =>
     let exileSource := prop.activation.any (·.cost.exileSourceFromBattlefield)
     let sacrificeOrExileSource :=
