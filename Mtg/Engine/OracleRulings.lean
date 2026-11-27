@@ -19,11 +19,13 @@ import Mtg.Engine.FraCardTests2
 import Mtg.Engine.FraCardTests3
 import Mtg.Engine.FraOracleTests8
 import Mtg.Engine.FrcOracleTests
+import Mtg.Engine.TrkOracleTests
+import Mtg.Engine.TrkOracleTests2
 import Mtg.Engine.CatalogModelTests
 
 /-!
 # Unique Oracle rulings
 
-Facade for the ruling table and the HOB/HOC, MSH, and FRA checks. Importing this
-module still loads every ruling test.
+Facade for the ruling table and the HOB/HOC, MSH, FRA, FRC, and TRK checks.
+Importing this module still loads every ruling test.
 -/

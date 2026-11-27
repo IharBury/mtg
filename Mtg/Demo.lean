@@ -2945,7 +2945,7 @@ private def staticPlayerRuleInterest (owner? : Option ObjectId) :
 
 private def staticPlayRuleInterest (owner? : Option ObjectId) : StaticPlayRule → ManaSpentInterest
   | .lookAtTopOfLibrary w => playerFilterInterest owner? w
-  | .mayPlayFrom w _ p _ _ _ _ _ _ _ _ | .castAsThoughFlash w p _ _
+  | .mayPlayFrom w _ p _ _ _ _ _ _ _ _ _ | .castAsThoughFlash w p _ _
   | .nextSpellCantBeCountered w p | .activateLoyaltyAsInstant w p =>
     ManaSpentInterest.merge (playerFilterInterest owner? w) (objPredInterest owner? p)
   | .spellCantBeCountered p? => p?.map (objPredInterest owner?) |>.getD {}

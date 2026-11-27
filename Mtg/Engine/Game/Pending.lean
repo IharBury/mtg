@@ -183,6 +183,8 @@ def CostPick.count : CostPick → Nat
     | .sacrifice (.count (.const n)) _
     | .discard (.count (.const n)) _
     | .exile (.count (.const n)) _ _ _
+    | .putOnLibrary (.count (.const n)) _ _ _
+    | .removeCounters (.count (.const n)) _ _
     | .tapObjects (.count (.const n)) _
     | .returnToHand (.count (.const n)) _ => if n > 0 then n.toNat else 1
     | _ => 1
@@ -256,6 +258,8 @@ def costPickOfItem? : CostItem → Option CostPick
   | item@(.discard _ .hand)
   | item@(.discard _ (.matching _))
   | item@(.exile _ _ (.filter _) false)
+  | item@(.putOnLibrary _ _ (.filter _) _)
+  | item@(.removeCounters (.count _) _ (.filter _))
   | item@(.tapObjects (.count _) _)
   | item@(.returnToHand _ (.filter _))
   | item@(.or _) =>

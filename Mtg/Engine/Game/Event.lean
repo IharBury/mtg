@@ -107,7 +107,7 @@ inductive ReplacementKind where
   /-- CR 616.1e: External effect causing `object` to enter with additional `kind` counters. -/
   | entersWithExtraCounters (object : Option ObjectId) (kind : CounterKind) (amount : Nat)
   /-- CR 616.1e / 122.6: Modifies the number of counters put on `object` (`count * mult + add`). -/
-  | modifyCountersPut (object : Option ObjectId) (kind : Option CounterKind) (add : Nat := 0) (mult : Nat := 1)
+  | modifyCountersPut (object : Option ObjectId) (kind : Option CounterKind) (add : Nat := 0) (mult : Nat := 1) (controller? : Option PlayerId := none)
   /-- CR 616.1e / 702.34a: Exiles `object` when leaving the stack instead of going elsewhere. -/
   | exileInsteadOfStackLeave (object : Option ObjectId)
   /-- CR 616.1e / 614.1a: Exiles `object` instead of putting it into a graveyard (optionally queueing a reflexive Wolf trigger). -/
@@ -126,8 +126,8 @@ inductive ReplacementKind where
   | modifyLifeGain (player : PlayerId) (add : Nat := 0) (mult : Nat := 1)
   /-- CR 616.1e / 111: Creates an extra `extraToken` alongside each Food token created by `player`. -/
   | createExtraTokenWithFood (player : PlayerId) (extraToken : CardDef)
-  /-- CR 616.1e / 111: Replaces artifact tokens created under `player`'s control with `newToken`. -/
-  | artifactTokensBecome (player : PlayerId) (newToken : CardDef)
+  /-- CR 616.1e / 111: Replaces tokens matching `fromPred` created under `player`'s control with `newToken`. -/
+  | artifactTokensBecome (player : PlayerId) (newToken : CardDef) (fromPred : ObjectPred := .hasType .artifact)
   /-- CR 616.1e / 111: Multiplies the number of tokens created under `player`'s control by `factor`. -/
   | multiplyTokenCreation (player : PlayerId) (factor : Nat := 2)
   /-- CR 616.1e / 122.1d: Removes a stun counter from `object` instead of untapping it. -/
@@ -320,6 +320,7 @@ inductive PlayerRule where
       (controller? : Option PlayerId := none)
   | hexproof (from? : Option QualityFilter := none) (sourceId? : Option ObjectId := none)
       (controller? : Option PlayerId := none)
+  | maxHandSize (limit? : Option Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Continuous rule or restriction effect affecting game rules or objects (CR 611.2c / 613.11). -/
@@ -332,6 +333,7 @@ inductive GameRule where
   | cantBlock (object : ObjectId)
   | uncounterable (object : ObjectId)
   | commandEmblem (object : ObjectId)
+  | extraTrigger (object : ObjectId) (extra : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Continuous permission to play or cast an object or spend mana on it (CR 611.2 / 701.18). -/

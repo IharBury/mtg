@@ -211,7 +211,7 @@ inductive StaticPlayRule where
       (freeCast : Bool := false) (onceEachTurn : Bool := false)
       (secondZone? : Option ZoneKind := none)
       (enterCounter? : Option CounterKind := none)
-      (asBeamMeUp : Bool := false)
+      (asBeamMeUp : Bool := false) (cantReturnSource : Bool := false)
   /-- Players may cast matching spells (or this spell when `thisSpell := true`) as though
   they had flash (CR 601.3b). -/
   | castAsThoughFlash (who : PlayerFilter := .you) (spellPred : ObjectPred := .anyObject)
@@ -239,9 +239,9 @@ instance : HasTextChange StaticPlayRule where
     else
       match r with
       | .lookAtTopOfLibrary w => .lookAtTopOfLibrary (HasTextChange.applyTextChanges tcs w)
-      | .mayPlayFrom w z p la le anyC free once z2? ec? bmu =>
+      | .mayPlayFrom w z p la le anyC free once z2? ec? bmu crs =>
         .mayPlayFrom (HasTextChange.applyTextChanges tcs w) z
-          (HasTextChange.applyTextChanges tcs p) la le anyC free once z2? ec? bmu
+          (HasTextChange.applyTextChanges tcs p) la le anyC free once z2? ec? bmu crs
       | .castAsThoughFlash w p ts nth =>
         .castAsThoughFlash (HasTextChange.applyTextChanges tcs w)
           (HasTextChange.applyTextChanges tcs p) ts nth

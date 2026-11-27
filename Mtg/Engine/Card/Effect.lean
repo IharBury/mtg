@@ -833,9 +833,9 @@ private def printRuleMod (ctx : PrintCtx) (targets : TargetSpec)
   | .play r =>
     match r with
     | .lookAtTopOfLibrary _ => "you may look at the top card of your library any time"
-    | .mayPlayFrom _ .graveyard (.hasType .land) true false false false false none none false =>
+    | .mayPlayFrom _ .graveyard (.hasType .land) true false false false false none none false _ =>
       "you may play lands from your graveyard"
-    | .mayPlayFrom _ z p lands linked anyC free once z2? enterCtr? asBeam =>
+    | .mayPlayFrom _ z p lands linked anyC free once z2? enterCtr? asBeam _ =>
       if asBeam then
         "each card in your graveyard has beam me up"
       else
@@ -1720,6 +1720,8 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
       | .you => s!"you lose {lifePhrase}"
       | p => s!"{printPlayerRef ctx targets p anaphor0} loses {lifePhrase}"
     applyCap ctx base
+  | .life (.set .you (.binary .mul (.playerMetric .life .you) (.const 2))) =>
+    applyCap ctx "double your life total"
   | .life (.set who amt) =>
     let amtS := printVal ctx amt
     let base :=

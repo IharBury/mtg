@@ -957,6 +957,7 @@ private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest 
         else
           (g.beginDiscardCards choosers lo, #[])
       else if verb == .sacrifice && !ch.invertSelection then
+        let cands := cands.filter (fun o => !g.cantSacrificeObject chooser o)
         let isCreatureSac :=
           match objs with
           | .inZones .battlefield (.all ps) => ps.contains (.hasType .creature)
@@ -3103,6 +3104,13 @@ private partial def applyRuleMod (g : Game) (env : EvalEnv) (ctx : InterpCtx)
       (EvalExpr.evalPlayerFilter g env who).foldl (fun g p =>
         (g.createEffect (.playerRule p (.cantAttackPlayer none) dur) (cause := some cause)).logMsg
           s!"{(g.player p).name} can't attack") g
+    | .maxHandSize who limit? =>
+      (EvalExpr.evalPlayerFilter g env who).foldl (fun g p =>
+        let msg :=
+          match limit? with
+          | none => s!"{(g.player p).name} has no maximum hand size"
+          | some n => s!"{(g.player p).name}'s maximum hand size is {n}"
+        (g.createEffect (.playerRule p (.maxHandSize limit?) dur) (cause := some cause)).logMsg msg) g
     | _ => g
   | .play pr =>
     match pr with
@@ -3159,7 +3167,13 @@ private partial def applyRuleMod (g : Game) (env : EvalEnv) (ctx : InterpCtx)
       (EvalExpr.evalPlayerFilter g env who).foldl (fun g p =>
         g.createEffect (.pendingFreeRGCreatureThisTurn p) (cause := some cause)) g
     | _, _ => g
-  | .trigger _ => g
+  | .trigger tr =>
+    match tr with
+    | .extraTrigger sc extra none =>
+      let live := (resolveLiveObjects g env sc.toExpr).filter (·.isOnBattlefield)
+      live.foldl (fun g o =>
+        g.createEffect (.gameRule (.extraTrigger o.id extra) dur) (cause := some cause)) g
+    | _ => g
 
 private def execInstallEffect (g : Game) (ctx : InterpCtx) (op : InstallEffectOp) : Game :=
   let env := interpEnv g ctx
@@ -3235,7 +3249,16 @@ private def execInstallEffect (g : Game) (ctx : InterpCtx) (op : InstallEffectOp
   | .applyRule durExpr rule =>
     match EvalExpr.evalDuration g env durExpr with
     | none => g
-    | some dur => applyRuleMod g env ctx dur rule cause
+    | some dur =>
+      let durStillValid : Bool :=
+        match dur with
+        | .whileSourceOnBattlefield sid | .untilSourceLeaves sid =>
+          (g.findObject? sid).any (·.isOnBattlefield)
+        | .whileTapped sid =>
+          (g.findObject? sid).any (fun o => o.isOnBattlefield && o.status.tapped)
+        | _ => true
+      if !durStillValid then g
+      else applyRuleMod g env ctx dur rule cause
   | .applyReplacement durExpr spec =>
     match EvalExpr.evalDuration g env durExpr with
     | none => g
@@ -3281,6 +3304,29 @@ private def execInstallEffect (g : Game) (ctx : InterpCtx) (op : InstallEffectOp
           }
           (g.createEffect (.prevention spec dur) (cause := some cause)).logMsg
             s!"Prevent all damage that would be dealt to {(g.player p).name}") g
+      | .modifyCountersPut scope kind? _ addCnt multFactor =>
+        if addCnt == 0 && multFactor <= 1 then g
+        else
+          let ctrlOnly? : Option PlayerId :=
+            if scope.pred == .controlledBy .you ||
+                (match scope.pred with | .all ps => ps.contains (.controlledBy .you) | _ => false) then
+              some ctx.controller
+            else none
+          let eid : EffectId := ⟨g.nextEffectId⟩
+          let rspec : ReplacementSpec := {
+            id := {
+              kind := .extraCounterOnPermanents
+              object := ctx.sourceId
+              player := some ctx.controller
+              counterKind := kind?
+              effectId := some eid
+            }
+            source := ctx.sourceId
+            controller := some ctx.controller
+            affectedPlayer := ctx.controller
+            kind := .modifyCountersPut none kind? addCnt multFactor ctrlOnly?
+          }
+          g.createEffect (.replacement rspec dur) (cause := some cause)
       | _ => g
   | .createDelayedTrigger spec =>
     let src := ctx.sourceId.bind g.damageSourceById?
@@ -4984,9 +5030,12 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                   | some o =>
                     if o.isOnBattlefield then
                       let actor := (g.controllerOf o).getD o.owner
-                      let (g1, _) := g.move id (.graveyard o.owner) none (verb := some .sacrifice) (actor := some actor)
-                      g := if (g1.followMovedToZone? id (· == .graveyard o.owner)).isSome then
-                        g1.logMsg s!"{g.name o} is sacrificed" else g1
+                      if g.cantSacrificeObject actor o then
+                        g := g.logMsg s!"{(g.player actor).name} can't sacrifice {g.name o}"
+                      else
+                        let (g1, _) := g.move id (.graveyard o.owner) none (verb := some .sacrifice) (actor := some actor)
+                        g := if (g1.followMovedToZone? id (· == .graveyard o.owner)).isSome then
+                          g1.logMsg s!"{g.name o} is sacrificed" else g1
                     else
                       g := g.logMsg "The token was already destroyed and can't be sacrificed"
                   | none =>

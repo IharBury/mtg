@@ -1578,7 +1578,7 @@ partial def evalCondition (g : Game) (env : EvalEnv) (cond : Condition) : Bool :
   | .allShare objs char =>
     let views := evalObjects g env objs
     match views[0]? with
-    | none => false
+    | none => true
     | some v0 =>
       match char with
       | .color =>

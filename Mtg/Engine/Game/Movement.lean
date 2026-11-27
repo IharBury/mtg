@@ -1104,15 +1104,19 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
       else
         g.finishCounterStackSpell spellId grantFreeCast ctrl cause name
 
-/-- Sacrifice `o` to its owner's graveyard (CR 701.21a). -/
+/-- Sacrifice `o` to its owner's graveyard (CR 701.17a / 101.2). Ignored if
+`actor` can't sacrifice `o` (e.g. Quark, Humble Proprietor, TRK ruling 1236). -/
 def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String)
     (cause : Option EventCause := none)
     (preBattlefield : Option (Array GameObject) := none)
     (deferPlayFromExileLogs : Bool := false) : Game :=
   let actor := (g.controllerOf o).getD o.owner
-  g.moveToOwnerGraveyard o reason (verb := some .sacrifice) (actor := some actor)
-    (preBattlefield := preBattlefield) (cause := cause)
-    (deferPlayFromExileLogs := deferPlayFromExileLogs)
+  if g.cantSacrificeObject actor o then
+    g.logMsg s!"{(g.player actor).name} can't sacrifice {g.name o}"
+  else
+    g.moveToOwnerGraveyard o reason (verb := some .sacrifice) (actor := some actor)
+      (preBattlefield := preBattlefield) (cause := cause)
+      (deferPlayFromExileLogs := deferPlayFromExileLogs)
 
 /-- First player in `players` who satisfies `pred`, plus those after them. -/
 def nextActorWhere (_g : Game) (players : Array PlayerId) (pred : PlayerId → Bool) :

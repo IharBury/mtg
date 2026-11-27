@@ -594,9 +594,17 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
         g.record (GameEvent.triggerModeChosen g.turnNumber sid idx (lifetime := lifetime))
       | none => g
     let g :=
-      if (g.findObject? objId).isSome then
-        g.record (GameEvent.announced g.turnNumber objId (modes := #[idx]))
-      else g
+      match g.findObject? objId with
+      | some obj =>
+        let g := g.record (GameEvent.announced g.turnNumber objId (modes := #[idx]))
+        match (g.triggerModesOf obj)[idx]? with
+        | some m =>
+          if m.requiresTarget then
+            let eff := g.expandEachOpponentEffect p m (some obj.id)
+            g.changeObject obj.id (.abilityEffect (some eff))
+          else g
+        | none => g
+      | none => g
     let g := g.record (GameEvent.facedDilemma g.turnNumber p (source? := some objId))
     let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1}"
     return g.finishResolutionChoice

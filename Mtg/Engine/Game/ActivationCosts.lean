@@ -186,6 +186,11 @@ def propHasRemainingExtraCosts (g : Game) (prop : ProposedSpell)
     prop.activation.any (fun a =>
       a.isFromGraveyard || a.isFromHand || a.cost.removeAnyNumberPlusOne)
 
+private def matchingCounterCount (o : GameObject) (kind? : Option CounterKind) : Nat :=
+  match kind? with
+  | some k => o.status.counterCount k
+  | none => o.status.toCounterBag.foldl (fun acc (_, n) => acc + n) 0
+
 private partial def costItemAllowsObject (g : Game) (p : PlayerId) (sourceId : Option ObjectId)
     (item : CostItem) (o : GameObject)
     (tapSource sacrificeOrExileSource discardOrExileHandSource : Bool) : Bool :=
@@ -212,6 +217,8 @@ private partial def costItemAllowsObject (g : Game) (p : PlayerId) (sourceId : O
       (zones.zones.contains .hand && inHand && (!discardOrExileHandSource || other)) ||
       (zones.zones.contains .battlefield && perm && (!sacrificeOrExileSource || other))
     inZone && EvalExpr.evalObjectPred g env (.live o) pred
+  | .removeCounters _ kind? (.filter pred) =>
+    perm && EvalExpr.evalObjectPred g env (.live o) pred && matchingCounterCount o kind? > 0
   | .tapObjects _ pred =>
     perm && (!tapSource || other) && !o.status.tapped && EvalExpr.evalObjectPred g env (.live o) pred
   | .returnToHand _ (.filter pred) =>
@@ -310,18 +317,26 @@ private partial def assignDisjointPicks (g : Game) (p : PlayerId) (sourceId : Op
       | .tapUntappedCreature | .tapTwoUntappedArtifacts
       | .discardACard | .discardNonland | .discardLegendaryCard | .discardLegendarySameName
       | .exileAnotherCreatureCardFromGraveyard
-      | .custom (.tapObjects ..) | .custom (.discard ..) => false
+      | .custom (.tapObjects ..) | .custom (.discard ..) | .custom (.removeCounters ..) => false
       | .custom (.exile _ zones _ _) => zones.zones.contains .battlefield
       | _ => true
     let laterSacAttachedEquip :=
       isBfSacPick && (picks.extract (idx + 1) picks.size).contains .sacrificeEquipmentAttachedToSource
-    let cands :=
+    let baseCands :=
       (g.costPickCandidates p sourceId pick
         (tapSource := tapSource)
         (sacrificeOrExileSource := sacrificeOrExileSource || laterSacAttachedEquip)
         (discardOrExileHandSource := discardOrExileHandSource)).filter fun cid =>
           !used.contains cid && !(isTapPick && preTappedIds.contains cid) &&
             !(isBfSacPick && sacReservedIds.contains cid)
+    let cands : Array ObjectId :=
+      match pick with
+      | .custom (.removeCounters _ kind? _) =>
+        baseCands.foldl (fun acc cid =>
+          match g.findObject? cid with
+          | some o => acc ++ Array.replicate (matchingCounterCount o kind?) cid
+          | none => acc) #[]
+      | _ => baseCands
     if cands.size < pick.count then none
     else if idx + 1 == picks.size then
       some (cands.extract 0 pick.count)
@@ -530,6 +545,20 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
               g := (g.move id (.hand o.owner) none (cause := some (.costPayment .returnToHand p forObj))
                 (deferPlayFromExileLogs := deferPfe)).1
               g := g.logMsg s!"{name} returns {oName} to its owner's hand"
+            | .custom (.removeCounters _ kind? _) =>
+              let chosenKind? : Option CounterKind :=
+                match kind? with
+                | some k => if o.status.counterCount k > 0 then some k else none
+                | none => (o.status.toCounterBag.find? (fun (_, n) => n > 0)).map Prod.fst
+              match chosenKind? with
+              | some k =>
+                let oName := g.name o
+                g := g.recordRemoveCounters id k 1 (byPlayer := some p)
+                  (cause := some (.costPayment .removeCounters p forObj))
+                  (deferPlayFromExileLogs := deferPfe)
+                g := g.logMsg s!"{name} removes {k.countersPhrase 1} from {oName} to pay a cost"
+              | none =>
+                return (if g.currentBatch.isNone then abortOrNoop g else g, false)
             | _ =>
               if o.isOnBattlefield then
                 let records :=
@@ -633,7 +662,11 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
     (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Except String Game :=
   g.withProposalActionM .costAction fun g => do
-  if ids.size != pick.count || ids.toList.eraseDups.length != ids.size then
+  let allowsMultiplicity : Bool :=
+    match pick with
+    | .custom (.removeCounters ..) => true
+    | _ => false
+  if ids.size != pick.count || (!allowsMultiplicity && ids.toList.eraseDups.length != ids.size) then
     throw s!"Choose {pick.count} to {pick.phrase}"
   for id in ids do
     let some o := g.findObject? id | throw "no such object"
@@ -642,6 +675,12 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
         (sacrificeOrExileSource := sacrificeOrExileSource)
         (discardOrExileHandSource := discardOrExileHandSource) then
       throw s!"{g.name o} can't be used to {pick.phrase}"
+  if let .custom (.removeCounters _ kind? _) := pick then
+    for id in ids.toList.eraseDups do
+      let needed := (ids.filter (· == id)).size
+      let some o := g.findObject? id | throw "no such object"
+      if matchingCounterCount o kind? < needed then
+        throw s!"{g.name o} doesn't have {needed} counter(s) to remove"
   let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
   let hadProp := g.proposedSpell.isSome
   let outer? := g.pendingReplacement
@@ -667,7 +706,7 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
   let isBfSacPick : Bool :=
     match pick with
     | .tapUntappedCreature | .tapTwoUntappedArtifacts
-    | .custom (.tapObjects ..)
+    | .custom (.tapObjects ..) | .custom (.removeCounters ..)
     | .exileAnotherCreatureCardFromGraveyard => false
     | _ => true
   if !sacrificeOrExileSource && isBfSacPick then

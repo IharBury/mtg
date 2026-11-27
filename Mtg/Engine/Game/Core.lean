@@ -1961,7 +1961,7 @@ private def repKindAnyObjId (pred : ObjectId → Bool)
   | .shieldCounterDestroy oid
   | .saveFromDestroyRemoveCounters oid _
   | .stunCounterUntap oid => checkValidObjId pred oid
-  | .modifyCountersPut oid _ _ _
+  | .modifyCountersPut oid _ _ _ _
   | .exileInsteadOfStackLeave oid
   | .exileInsteadOfGraveyard oid _
   | .addNoncombatDamage oid _
@@ -2010,7 +2010,8 @@ private def specAnyObjId (spec : ContinuousEffectSpec) (pred : ObjectId → Bool
    | .gameRule (.cantBeBlockedExceptByHaste id) _
    | .gameRule (.cantBlock id) _
    | .gameRule (.uncounterable id) _
-   | .gameRule (.commandEmblem id) _ => checkValidObjId pred id
+   | .gameRule (.commandEmblem id) _
+   | .gameRule (.extraTrigger id _) _ => checkValidObjId pred id
    | .replacement r _ =>
      repIdAnyObjId pred r.id prospectivePred ||
        checkValidOptObjId pred r.source ||
@@ -7956,7 +7957,7 @@ private partial def evalStaticCondCore (g : Game) (src : GameObject) (srcCtrl : 
   | .allShare oe char =>
     let objs := g.evalStaticObjsCore src srcCtrl oe colorOf ok ptOf? kwOf? triggerSubject? hasKwExtra? eventIdx?
     match objs[0]? with
-    | none => false
+    | none => true
     | some o0 =>
       match char with
       | .color =>
@@ -12257,7 +12258,7 @@ def replacementPairCommutes (a b : ReplacementOrPrevention) : Bool :=
       | .entersWithCountersSelf .., .entersWithExtraCounters ..
       | .entersWithExtraCounters .., .entersWithCountersSelf .. => true
       | .entersWithExtraCounters _ ka na, .entersWithExtraCounters _ kb nb => ka != kb || na == nb
-      | .modifyCountersPut _ ka addA multA, .modifyCountersPut _ kb addB multB =>
+      | .modifyCountersPut _ ka addA multA _, .modifyCountersPut _ kb addB multB _ =>
         (ka.isSome && kb.isSome && ka != kb) ||
         (multA == 1 && multB == 1) || (addA == 0 && addB == 0)
       | .addNoncombatDamage _ _, .addNoncombatDamage _ _ => true
@@ -12270,8 +12271,8 @@ def replacementPairCommutes (a b : ReplacementOrPrevention) : Bool :=
       | .multiplyTokenCreation _ _, .multiplyTokenCreation _ _ => true
       | .createExtraTokenWithFood _ _, .multiplyTokenCreation _ _
       | .multiplyTokenCreation _ _, .createExtraTokenWithFood _ _ => true
-      | .artifactTokensBecome _ _, .multiplyTokenCreation _ _
-      | .multiplyTokenCreation _ _, .artifactTokensBecome _ _ => true
+      | .artifactTokensBecome _ _ _, .multiplyTokenCreation _ _
+      | .multiplyTokenCreation _ _, .artifactTokensBecome _ _ _ => true
       | _, _ => false
   | .prevention pa, .replacement sb =>
     match pa.kind, sb.kind with
@@ -13114,8 +13115,9 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
             | .replacement spec d =>
               if g.durationActive d then
                 match spec.kind with
-                | .modifyCountersPut tid k? add mult =>
-                  if (tid.isNone || tid == some target.id) && (k?.isNone || k? == some kind) then
+                | .modifyCountersPut tid k? add mult ctrl? =>
+                  let ctrlOk := ctrl?.all (fun c => g.controllerOf target == some c)
+                  if (tid.isNone || tid == some target.id) && ctrlOk && (k?.isNone || k? == some kind) then
                     let spec' :=
                       if k?.isNone then
                         { spec with id := { spec.id with counterKind := some kind }, affectedPlayer := affected }
@@ -13309,7 +13311,7 @@ def mayCastExiledBySource (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
           ab.anyRule fun cond? r =>
             cond?.all (fun c => g.evalStaticCondFull src p c) &&
               match r with
-              | .play (.mayPlayFrom who .exile pred _ true _ _ _ _ _ _) =>
+              | .play (.mayPlayFrom who .exile pred _ true _ _ _ _ _ _ _) =>
                 g.matchStaticPlayerFilterFull src p who p &&
                   g.evalStaticPredFull src p o pred
               | _ => false
@@ -15219,6 +15221,11 @@ def extraTriggerCopies (g : Game) (controller : PlayerId) (source : GameObject)
             | _ => a) acc
         else acc
       | _ => acc) acc) 0
+  + g.activeEffects.foldl (fun acc (_, eff) =>
+      match eff with
+      | .gameRule (.extraTrigger oid extra) d =>
+        if oid == source.id && g.durationActive d then acc + extra else acc
+      | _ => acc) 0
 
 /-- Append waiting-trigger snapshots, skipping any controller who has already
 lost or left the game (CR 800.4d). -/
@@ -17624,7 +17631,7 @@ private def remapProposalRepKind (ro : ObjectId → ObjectId) : ReplacementKind 
   | .entersBackFaceUp oid => .entersBackFaceUp (oid.map ro)
   | .asEntersAttachAura oid hid => .asEntersAttachAura (ro oid) (ro hid)
   | .entersWithExtraCounters oid k a => .entersWithExtraCounters (oid.map ro) k a
-  | .modifyCountersPut oid k a m => .modifyCountersPut (oid.map ro) k a m
+  | .modifyCountersPut oid k a m c? => .modifyCountersPut (oid.map ro) k a m c?
   | .exileInsteadOfStackLeave oid => .exileInsteadOfStackLeave (oid.map ro)
   | .exileInsteadOfGraveyard oid w => .exileInsteadOfGraveyard (oid.map ro) w
   | .shieldCounterDestroy oid => .shieldCounterDestroy (ro oid)
@@ -17659,6 +17666,7 @@ private def remapProposalGameRule (ro : ObjectId → ObjectId) : GameRule → Ga
   | .cantBlock o => .cantBlock (ro o)
   | .uncounterable o => .uncounterable (ro o)
   | .commandEmblem o => .commandEmblem (ro o)
+  | .extraTrigger o n => .extraTrigger (ro o) n
   | r => r
 
 private def remapProposalPlayPermSpec (ro : ObjectId → ObjectId) :
