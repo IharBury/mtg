@@ -821,7 +821,7 @@ def faceYourself : CardDef :=
     "Face Yourself",
     "{5}{R}{R}",
     "Sorcery",
-    "For each creature target player controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this creature.\""
+    "For each creature target player controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this token.\""
   ]
 
 def fulminousForte : CardDef :=
@@ -1723,7 +1723,7 @@ def codieRavenousCodex : CardDef :=
     "{3}",
     "Legendary Artifact Creature — Book Construct",
     "1/4",
-    "Whenever you cast a prepared spell, copy it. You may choose new targets for the copy.",
+    "Whenever you cast a prepare spell, copy it. You may choose new targets for the copy.",
     "{W}{U}{B}{R}{G}, {T}: Each creature you control becomes prepared. (Only creatures with prepare spells can become prepared.)"
   ]
 

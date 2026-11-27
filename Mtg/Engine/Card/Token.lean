@@ -220,8 +220,8 @@ def oracleQuote? : GrantedAbility → Option String
       else some s!"Whenever a land you control enters, put {plusOnePlusOneCountersPhrase n.toNat} on this token."
     | .stepBegins .end (.player .any), .moveZone .this .graveyard .sacrifice _ =>
       match ab.interveningIf? with
-      | some c => some s!"At the beginning of the end step, if {toOracleStr c { capitalize := false }}, sacrifice this creature."
-      | none => some "At the beginning of the end step, sacrifice this creature."
+      | some c => some s!"At the beginning of the end step, if {toOracleStr c { capitalize := false }}, sacrifice this token."
+      | none => some "At the beginning of the end step, sacrifice this token."
     | _, _ => none
   | .static sa =>
     match sa with
