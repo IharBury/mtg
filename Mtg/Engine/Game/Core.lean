@@ -9499,8 +9499,8 @@ def staticAbilities (g : Game) (o : GameObject) : Array StaticAbility :=
   let hasPeerOrEmb :=
     !isStackAbilityObj o &&
       g.hasPeerOrEmblemStaticLayer6 o staticGrantsOrStripsStatic (some hasCopy)
-  let hasBasicLandSet := o.isOnBattlefield && g.hasActiveBasicLandSetEffect
-  if !hasEff && !hasPeerOrEmb && !hasBasicLandSet then
+  let hasBasicLandSet? := if o.isOnBattlefield then some g.hasActiveBasicLandSetEffect else none
+  if !hasEff && !hasPeerOrEmb && !(hasBasicLandSet?.getD false) then
     if isFaceDownMasked o then #[]
     else
       let bc := if hasCopy then g.baseCard o else o.printed
@@ -9512,7 +9512,7 @@ def staticAbilities (g : Game) (o : GameObject) : Array StaticAbility :=
   else if g.hasCwStaticLayer6Effect || g.hasKwDepAttStatic o (some hasCopy) then
     (g.evalLayer6Fast o).staticsWithTs.map Prod.fst
   else
-    (evalStaticsFast g false (some hasEff) (some hasBasicLandSet) (some hasCopy) 4 o).1.map Prod.fst
+    (evalStaticsFast g false (some hasEff) (some (hasBasicLandSet?.getD g.hasActiveBasicLandSetEffect)) (some hasCopy) 4 o).1.map Prod.fst
 
 /-- Whether `o` currently has hexproof and indestructible from a Saga lore-threshold
 static ability (Tom Bombadil, CR 604.2 / 613.1f). -/
@@ -9540,13 +9540,13 @@ def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
   let hasPeerOrEmbStrip :=
     !isStackAbilityObj o &&
       g.hasPeerOrEmblemStaticLayer6 o staticStripsAbilities (some hasCopy)
-  let hasBasicLandSet := o.isOnBattlefield && g.hasActiveBasicLandSetEffect
-  if !hasEff && !hasPeerOrEmbStrip && !hasBasicLandSet then
+  let hasBasicLandSet? := if o.isOnBattlefield then some g.hasActiveBasicLandSetEffect else none
+  if !hasEff && !hasPeerOrEmbStrip && !(hasBasicLandSet?.getD false) then
     !isFaceDownMasked o
   else if g.hasCwStaticLayer6Effect || g.hasKwDepAttStatic o (some hasCopy) then
     (g.evalLayer6Fast o).retainsBase
   else
-    (evalStaticsFast g false (some hasEff) (some hasBasicLandSet) (some hasCopy) 4 o).2
+    (evalStaticsFast g false (some hasEff) (some (hasBasicLandSet?.getD g.hasActiveBasicLandSetEffect)) (some hasCopy) 4 o).2
 
 /-- Evaluated keywords of `o` in Layer 6 (CR 613.1f / 613.7 / 613.8). -/
 def currentKeywords (g : Game) (o : GameObject) : Array KeywordAbility :=

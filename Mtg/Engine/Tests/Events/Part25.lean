@@ -596,11 +596,32 @@ private def replayOk59i3 (gs : Array Game) : Bool :=
     (gPeer0.record (GameEvent.attached gPeer0.turnNumber (gPeer0.snapshot (gPeer0.object! peerAuraId)) peerHostId (cause := testCause))).createEffect
       (.layered (.objects #[peerHostId]) (.abilities { keywords := #[Keyword.flying] } .none) .untilEndOfTurn)
       (cause := some testCause)
+  let offBfGrantStatic : StaticAbility :=
+    .continuous none { zones := .battlefield, pred := .sameAs .this } (.grantKeywords #[Keyword.vigilance])
+  let offBfLandDef : CardDef := {
+    name := "P59i3 OffBfStripLand"
+    types := #[.land]
+    staticAbilities := #[
+      .continuous none { zones := { zones := #[.hand], owner := .ofPlayer .you }, pred := .hasType .creature }
+        (.all #[.loseAllAbilities, .grantStatic #[offBfGrantStatic]])
+    ]
+  }
+  let gOffBf0 :=
+    insertObject (addPermanent (addPermanent g0 offBfLandDef p0 p0) spreadSeasDef p0 p0) bear p0 (.hand p0)
+  let offLandId := (gOffBf0.permanentsOf p0).find? (·.name == offBfLandDef.name) |>.get!.id
+  let offAuraId := (gOffBf0.permanentsOf p0).find? (·.name == spreadSeasDef.name) |>.get!.id
+  let offHandId := (gOffBf0.player p0).hand.back!
+  let gOffBf1 :=
+    gOffBf0.record (GameEvent.attached gOffBf0.turnNumber (gOffBf0.snapshot (gOffBf0.object! offAuraId)) offLandId (cause := testCause))
   let cr3057AndPeerOk :=
     gSeas1.hasActiveBasicLandSetEffect &&
     !(gSeas1.currentKeywords (gSeas1.object! slId)).contains Keyword.indestructible &&
     (gSeas1.subtypes (gSeas1.object! slId)).contains .island &&
-    (gPeer1.currentKeywords (gPeer1.object! peerOtherId)).contains Keyword.trample
+    (gPeer1.currentKeywords (gPeer1.object! peerOtherId)).contains Keyword.trample &&
+    !gOffBf0.retainsPrintedAbilities (gOffBf0.object! offHandId) &&
+    !(gOffBf0.staticAbilities (gOffBf0.object! offHandId)).isEmpty &&
+    gOffBf1.retainsPrintedAbilities (gOffBf1.object! offHandId) &&
+    (gOffBf1.staticAbilities (gOffBf1.object! offHandId)).isEmpty
 
   -- 3c. Non-battlefield Layer 6 static grants a keyword to a card in hand, and
   --     expanded `Exalted`/`Decayed`/`Myriad`/`Undying` triggers + cumulative `.exalted` counters work!
@@ -788,7 +809,7 @@ private def replayOk59i3 (gs : Array Game) : Bool :=
   mustHold59i3 "3g_histReplay" histReplayOk &&
   mustHold59i3 "3h_nthRes" nthResOk &&
   mustHold59i3 "3.replay"
-    (replayOk59i3 #[gDressDown1, gTsSelf1, gSplit1, gSeas1, gPeer1, gNonBf, gExa2, gImp0, gAllTypes1,
+    (replayOk59i3 #[gDressDown1, gTsSelf1, gSplit1, gSeas1, gPeer1, gOffBf1, gNonBf, gExa2, gImp0, gAllTypes1,
       gLifeRuleExp, gHex0, gProtDup, gFdEx, gFdBf, gAff0, gTc1, gTcOrder, gHist1, gNestedNth])
 
 end Phase59Item3EventAlignment
