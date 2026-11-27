@@ -28,11 +28,21 @@ def unmodeledSpellReport : String :=
   if unmodeledSpellReport.isEmpty then true
   else panic! unmodeledSpellReport
 
+private def hasUniqueNames (cards : Array CardDef) : Bool :=
+  let names := cards.map (·.name)
+  names.foldl (fun (seen : Array String × Bool) nm =>
+    if !seen.2 || seen.1.contains nm then (seen.1, false)
+    else (seen.1.push nm, true)) (#[], true) |>.2
+
 #guard
   let names := supportedCatalogCards.map (·.name)
-  mshCards.size == 286 &&
+  hobbitCards.size == 193 &&
+    hobbitEternalCards.size == 117 &&
+    mshCards.size == 286 &&
     realityFractureCards.size == 285 &&
     realityFractureCommanderCards.size == 87 &&
+    [hobbitCards, hobbitEternalCards, mshCards, realityFractureCards,
+      realityFractureCommanderCards].all hasUniqueNames &&
     ["Brave Brawler", "Jennifer Walters", "The Sensational She-Hulk",
       "Stature, Size Shifter", "Academic Ascent", "Blossom-Blessed Angel",
       "Jace's Machinations"].all names.contains

@@ -2,7 +2,8 @@
 # Unique Oracle rulings
 
 Judge-issued Oracle rulings (Gatherer / Scryfall `wotc` comments, plus
-MSH release notes) for unique cards in `The Hobbit` (HOB),
+MSH release notes; when Scryfall does not match Gatherer, Gatherer is
+authoritative) for unique cards in `The Hobbit` (HOB),
 `The Hobbit Eternal` (HOC),
 `Magic: The Gathering | Marvel Super Heroes` (MSH), and
 `Magic: The Gathering | Reality Fracture` (FRA), and

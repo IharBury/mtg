@@ -9,7 +9,8 @@ Oracle characteristics for every card in Magic: The Gathering | Reality Fracture
 modeled: no card keeps a line as printed text. Empower Jace, prepare spells,
 convoke, and `{2/C}` hybrid mana are modeled.
 
-Source: Scryfall set `fra`.
+Source: Gatherer set `FRA` (https://gatherer.wizards.com/sets/FRA).
+When Scryfall does not match Gatherer, Gatherer is authoritative.
 -/
 
 namespace Mtg.Engine.Catalog
@@ -746,8 +747,7 @@ def realityFractureBlazingCrescendo : CardDef :=
     "Blazing Crescendo",
     "{1}{R}",
     "Instant",
-    "Target creature gets +3/+1 until end of turn.",
-    "Exile the top card of your library. Until the end of your next turn, you may play that card."
+    "Target creature gets +3/+1 until end of turn. Exile the top card of your library. Until the end of your next turn, you may play that card."
   ]
 
 def chandrasEmberling : CardDef :=
@@ -821,7 +821,7 @@ def faceYourself : CardDef :=
     "Face Yourself",
     "{5}{R}{R}",
     "Sorcery",
-    "For each creature target player controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this creature.\""
+    "For each creature target player controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this token.\""
   ]
 
 def fulminousForte : CardDef :=
@@ -1723,7 +1723,7 @@ def codieRavenousCodex : CardDef :=
     "{3}",
     "Legendary Artifact Creature — Book Construct",
     "1/4",
-    "Whenever you cast a prepared spell, copy it. You may choose new targets for the copy.",
+    "Whenever you cast a prepare spell, copy it. You may choose new targets for the copy.",
     "{W}{U}{B}{R}{G}, {T}: Each creature you control becomes prepared. (Only creatures with prepare spells can become prepared.)"
   ]
 
