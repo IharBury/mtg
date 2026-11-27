@@ -9,7 +9,9 @@ Oracle characteristics for cards from Magic: The Gathering | The Hobbit
 `hobbitCards` lists every unique card in the set, including Journey basic
 lands that are also in the core catalog.
 
-Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
+Source: Gatherer set `HOB` (https://gatherer.wizards.com/sets/HOB) and
+https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks.
+When Scryfall does not match Gatherer, Gatherer is authoritative.
 -/
 
 namespace Mtg.Engine.Catalog

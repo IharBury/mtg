@@ -8,6 +8,9 @@ import Mtg.Engine.Catalog.HobbitEternal
 Oracle characteristics for every card in Magic: The Gathering | Reality Fracture
 Commander (FRC). Each card is defined by its printed text. Arcane Signet is
 the same card as the Hobbit Eternal printing.
+
+Source: Gatherer set `FRC` (https://gatherer.wizards.com/sets/FRC).
+When Scryfall does not match Gatherer, Gatherer is authoritative.
 -/
 
 namespace Mtg.Engine.Catalog

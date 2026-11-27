@@ -4143,7 +4143,7 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
                 return some (.castSpell who pred (nthOfFilter? := some ord), .perOccurrence, .unlimited, #[.battlefield])
         if cLow == "a spell" then
           return some (.castSpell who .anyObject, .perOccurrence, .unlimited, #[.battlefield])
-        if cLow == "a prepared spell" then
+        if cLow == "a prepare spell" || cLow == "a prepared spell" then
           return some (.castSpell who .anyObject (mustBePrepared := true), .perOccurrence, .unlimited, #[.battlefield])
         let (spellCore, fromZ?) : String × Option ZoneKind :=
           match dropSuffixCI? castBody " from your hand" with

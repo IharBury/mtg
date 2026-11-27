@@ -120,7 +120,7 @@ player view. With `--interactive`, that player is the first named player; with
 | `lean-toolchain` | Pinned Lean toolchain version. |
 | `Mtg/Engine.lean`, `Mtg/Engine/` | The `Mtg.Engine` library. |
 | `Mtg/Engine/Card/`, `Mtg/Engine/Card/Parser/` | Unified CR-aligned card, ability, expression, cost, keyword, and instruction ASTs, canonical `ToOracle` printer, and the 5-stage compositional Oracle parser. |
-| `Mtg/Engine/Catalog/` | Oracle cards used by the demo decks (engine remains card-agnostic). |
+| `Mtg/Engine/Catalog/` | Oracle cards used by the demo decks (engine remains card-agnostic). Follows official Gatherer Oracle text; when Scryfall does not match Gatherer, Gatherer is authoritative. |
 | `Mtg/Engine/Tests/` | Compile-time engine smoke tests, card-model guards, test builders, and regression suites. |
 | `Mtg/Demo.lean`, `Mtg/Demo/` | Console demonstration, text rendering, Welcome Deck lists, and deck-list file parsing. |
 | `Mtg/OracleRoundtrip.lean` | `lake exe oracle-roundtrip`: verifies 100% structural `BEq CardDef` round-trip (`renderFullOracle` → `parseOracleCard`) across all 981 catalog cards. |

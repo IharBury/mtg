@@ -1,6 +1,6 @@
 # Compositional Oracle Parser & Canonical `ToOracle` Printer
 
-`Mtg.Engine.Card` parses printed *Magic: The Gathering* Oracle card text through a five-stage compositional pipeline under `Mtg/Engine/Card/Parser/` (9 modules, 14,169 lines) and formats any `CardDef` back into canonical Oracle text purely via `ToOracle` instances—with zero stored raw-text strings and 100% structural `BEq CardDef` round-trip verification across all 981 catalog cards.
+`Mtg.Engine.Card` parses official *Magic: The Gathering* Oracle card text through a five-stage compositional pipeline under `Mtg/Engine/Card/Parser/` (9 modules, 14,169 lines) and formats any `CardDef` back into canonical Oracle text purely via `ToOracle` instances—with zero stored raw-text strings and 100% structural `BEq CardDef` round-trip verification across all 981 catalog cards. Catalog Oracle text follows official Gatherer Oracle text; when Scryfall does not match Gatherer, Gatherer is authoritative.
 
 See [`architecture.md`](./architecture.md) for the overall system map, [`card-and-ability-model.md`](./card-and-ability-model.md) for the AST types produced, and [`game-evaluation.md`](./game-evaluation.md) for how the runtime engine evaluates parsed abilities.
 

@@ -1070,7 +1070,7 @@ def renderClause (ctx : PrintCtx) (grouping : BatchGrouping := .perOccurrence)
     if sp == .sameAs .this then s!"{w} {v} this spell"
     else
       let spS :=
-        if prep then "a prepared spell"
+        if prep then "a prepare spell"
         else if sp == .anyObject then "a spell"
         else
           match sp with
