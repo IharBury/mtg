@@ -133,7 +133,7 @@ Keyword-specific `CostKind` tags (`convoke`, `ward`, `teamwork`, `cycle`) are em
 
 - `.predefined` [`PredefinedToken`](../Mtg/Engine/Card/Ability.lean): CR 111.10a–x predefined tokens (`.treasure`, `.food`, `.clue`, `.incubator` with back face *"Phyrexian Token"*, `.map`, `.junk`, `.lander`, `.mutagen`, `.vibranium`, `.heartwood`).
 - `.custom` [`CustomTokenSpec`](../Mtg/Engine/Card/Ability.lean): dynamic `ValueExpr` power/toughness, `Array KeywordAbility`, `Array GrantedAbility`, and `useCardNameShorthand` for CR 111.11 card-named tokens.
-- `.copyOf (ref : ObjectExpr) (mods : Array` [`CopyModification`](../Mtg/Engine/Card/Ability.lean)`)`: `CopyModification` covers CR 707.9 overrides (including P/T override stripping P/T-setting CDAs per CR 707.9d, added supertypes/types/subtypes/colors/keywords/abilities, creature-subtype replacement, and removed supertypes).
+- `.copyOf (ref : ObjectExpr) (mods : Array CopyModification)`: [`CopyModification`](../Mtg/Engine/Card/Ability.lean) covers CR 707.9 overrides (including P/T override stripping P/T-setting CDAs per CR 707.9d, added supertypes/types/subtypes/colors/keywords/abilities, creature-subtype replacement, and removed supertypes).
 
 ---
 
