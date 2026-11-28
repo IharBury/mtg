@@ -100,13 +100,15 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
         throw "Beam me up can only be paid from your graveyard (CR 702.196a)"
       if !(rawFace.types.contains .instant || rawFace.types.contains .sorcery) then
         throw s!"{rawFace.name} must be an instant or sorcery to cast with beam me up (CR 702.196a)"
-      let some bmuSpec := g.effectiveBeamMeUpCost? p card
+      let some _ := g.effectiveBeamMeUpCost? p card
         | throw s!"{rawFace.name} has no beam me up cost"
       let some crea := g.findObject? cid | throw "no such object"
       if !(crea.isOnBattlefield && g.isCreature crea && g.controlledBy crea p) then
         throw s!"{g.name crea} is not a creature you control"
       if g.cantBeBeamedUp crea then
         throw s!"{g.name crea} can't be beamed up (CR 702.196b)"
+      let some bmuSpec := g.effectiveBeamMeUpCostFor? p card (some cid)
+        | throw s!"{g.name crea} can't be beamed up to cast {rawFace.name} this way (CR 702.196b)"
       pure (some bmuSpec.mana)
   let allPerms :=
     g.playPermissionsFor p card ++

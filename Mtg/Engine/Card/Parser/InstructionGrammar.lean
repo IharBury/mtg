@@ -516,7 +516,7 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
       return some (.create (.tokens .you (.const 1) (.predefined .incubator) { counters := #[(.plusOnePlusOne, v)] }), true, ctx)
   if let some dblRest := pDropPrefixCI? norm "double " then
     if pLower dblRest == "your life total" then
-      return some (.life (.gain .you (.playerMetric .life .you)), true, ctx)
+      return some (.life (.set .you (.binary .mul (.playerMetric .life .you) (.const 2))), true, ctx)
     let (dblCore, dur?) := peelTrailingDuration dblRest (some ctx)
     if let some objStr0 := (pDropSuffixCI? dblCore "'s power and toughness").orElse
         (fun _ => pDropSuffixCI? dblCore " power and toughness") then

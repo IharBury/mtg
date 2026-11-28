@@ -158,7 +158,7 @@ def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
       ab.anyRule fun cond? r =>
         cond?.all (EvalExpr.evalCondition g env) &&
           match r with
-          | .play (.mayPlayFrom who z pred true false _ _ _ z2? _ false) =>
+          | .play (.mayPlayFrom who z pred true false _ _ _ z2? _ false _) =>
             (z == .graveyard || z2? == some .graveyard) &&
               (pred == .hasType .land || pred == .anyObject) &&
               EvalExpr.matchesPlayerFilter g env who p
@@ -173,16 +173,20 @@ def controlsStaticPlayFromZone (g : Game) (p : PlayerId) (o : GameObject) (zk : 
       ab.anyRule fun cond? r =>
         cond?.all (EvalExpr.evalCondition g env) &&
           match r with
-          | .play (.mayPlayFrom who z pred landsAllowed false _ _ _ z2? _ false) =>
+          | .play (.mayPlayFrom who z pred landsAllowed false _ _ _ z2? _ false _) =>
             (z == zk || z2? == some zk) &&
               EvalExpr.matchesPlayerFilter g env who p &&
               (!g.isLand o || landsAllowed) &&
               EvalExpr.evalObjectPred g env (.live o) pred
           | _ => false
 
-/-- Beam me up cost granted to `o` in `p`'s graveyard, either printed on `o` or
-granted by a static `.mayPlayFrom ... (grantBeamMeUp := true)` (CR 702.196a). -/
-def effectiveBeamMeUpCost? (g : Game) (p : PlayerId) (o : GameObject) : Option CostSpec :=
+/-- Beam me up cost granted to `o` in `p`'s graveyard when optionally returning
+`returnedId?`, either printed on `o` or granted by a static
+`.mayPlayFrom ... (asBeamMeUp := true)` (CR 702.196a; TRK ruling 1172: a grantor
+with `cantReturnSource := true` cannot be returned for its own granted permission,
+but can still be returned for a card's printed beam me up ability). -/
+def effectiveBeamMeUpCostFor? (g : Game) (p : PlayerId) (o : GameObject)
+    (returnedId? : Option ObjectId := none) : Option CostSpec :=
   match (g.baseCard o).beamMeUpCost? with
   | some c => some c
   | none =>
@@ -194,12 +198,18 @@ def effectiveBeamMeUpCost? (g : Game) (p : PlayerId) (o : GameObject) : Option C
           ab.anyRule fun cond? r =>
             cond?.all (EvalExpr.evalCondition g env) &&
               match r with
-              | .play (.mayPlayFrom who z pred _ false _ _ _ z2? _ true) =>
+              | .play (.mayPlayFrom who z pred _ false _ _ _ z2? _ true cantRetSrc) =>
                 (z == .graveyard || z2? == some .graveyard) &&
+                  (!cantRetSrc || returnedId?.all (· != src.id)) &&
                   EvalExpr.matchesPlayerFilter g env who p &&
                   EvalExpr.evalObjectPred g env (.live o) pred
               | _ => false
       if granted then some (CostSpec.ofMana (g.baseCard o).manaCost) else none
+
+/-- Beam me up cost granted to `o` in `p`'s graveyard, either printed on `o` or
+granted by a static `.mayPlayFrom ... (asBeamMeUp := true)` (CR 702.196a). -/
+def effectiveBeamMeUpCost? (g : Game) (p : PlayerId) (o : GameObject) : Option CostSpec :=
+  g.effectiveBeamMeUpCostFor? p o none
 
 def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .graveyard p && o.owner == p && isDiscardableCard o &&
@@ -235,7 +245,7 @@ def controlsCastCreaturesFromTop (g : Game) (p : PlayerId) : Bool :=
       ab.anyRule fun cond? r =>
         cond?.all (EvalExpr.evalCondition g env) &&
           match r with
-          | .play (.mayPlayFrom who .library (.hasType .creature) false false _ _ _ _ _ _) =>
+          | .play (.mayPlayFrom who .library (.hasType .creature) false false _ _ _ _ _ _ _) =>
             EvalExpr.matchesPlayerFilter g env who p
           | _ => false
 
@@ -248,7 +258,7 @@ def controlsPlayLandsFromTop (g : Game) (p : PlayerId) : Bool :=
       ab.anyRule fun cond? r =>
         cond?.all (EvalExpr.evalCondition g env) &&
           match r with
-          | .play (.mayPlayFrom who .library (.hasType .land) true false _ _ _ _ _ _) =>
+          | .play (.mayPlayFrom who .library (.hasType .land) true false _ _ _ _ _ _ _) =>
             EvalExpr.matchesPlayerFilter g env who p
           | _ => false
 

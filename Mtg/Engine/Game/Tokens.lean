@@ -321,19 +321,39 @@ def replaceTokenBatchesChoice (g : Game) (initialBatches : Array ProposedTokenBa
                         affectedPlayer := ctrl
                         kind := .createExtraTokenWithFood ctrl treasureToken
                       }
-                | .replaceTokens who fromPred _ =>
+                | .replaceTokens who fromPred toTok =>
                   if includeKindReplacements && EvalExpr.matchesPlayerFilter g env who ctrl then
                     let matchesBatch :=
                       if fromPred == .hasType .artifact then hasArtifact
                       else batches.any fun b =>
                         EvalExpr.evalObjectPred g env (.live (g.tokenBatchProbe b.controller b.printed)) fromPred
                     if matchesBatch then
+                      let newCard : CardDef :=
+                        match toTok with
+                        | .custom s =>
+                          let defaultName :=
+                            if s.subtypes == #[.sculpture, .treasure] then "Sculpture"
+                            else String.intercalate " " (s.subtypes.toList.map CardSubtype.englishName)
+                          { name := s.name?.getD defaultName
+                            supertypes := s.supertypes
+                            types := s.types
+                            subtypes := s.subtypes.map CardSubtype.englishName
+                            power := (s.power?.map (EvalExpr.evalValue g env)).map .fixed
+                            toughness := (s.toughness?.map (EvalExpr.evalValue g env)).map .fixed
+                            loyalty := s.loyalty?
+                            colorIndicator := if s.colors.isColorless then none else some s.colors
+                            keywords := s.keywords
+                            isToken := true }
+                        | _ => dragon55flyingToken
+                      let kindId : ReplacementEffectKind :=
+                        if fromPred == .hasType .artifact then .artifactTokensBecomeDragons
+                        else .artifactTokensBecome
                       specs := specs.push {
-                        id := { kind := .artifactTokensBecomeDragons, object := some o.id }
+                        id := { kind := kindId, object := some o.id }
                         source := some o.id
                         controller := some ctrl
                         affectedPlayer := ctrl
-                        kind := .artifactTokensBecome ctrl dragon55flyingToken
+                        kind := .artifactTokensBecome ctrl newCard fromPred
                       }
                 | .multiplyTokens who factor =>
                   if includeMultiplier && factor > 1 && EvalExpr.matchesPlayerFilter g env who ctrl then
@@ -354,8 +374,12 @@ def replaceTokenBatchesChoice (g : Game) (initialBatches : Array ProposedTokenBa
             | .createExtraTokenWithFood p _ =>
               if includeKindReplacements && p == ctrl && hasFood then
                 specs := specs.push { spec with affectedPlayer := ctrl }
-            | .artifactTokensBecome p _ =>
-              if includeKindReplacements && p == ctrl && hasArtifact then
+            | .artifactTokensBecome p _ fromPred =>
+              let matchesBatch :=
+                if fromPred == .hasType .artifact then hasArtifact
+                else batches.any fun b =>
+                  EvalExpr.evalObjectPred g { controller := ctrl } (.live (g.tokenBatchProbe b.controller b.printed)) fromPred
+              if includeKindReplacements && p == ctrl && matchesBatch then
                 specs := specs.push { spec with affectedPlayer := ctrl }
             | .multiplyTokenCreation p _ =>
               if includeMultiplier && p == ctrl then
@@ -397,9 +421,12 @@ def replaceTokenBatchesChoice (g : Game) (initialBatches : Array ProposedTokenBa
               else
                 updated := updated.push b
             batches := updated ++ bonuses
-          | .artifactTokensBecome _ newCard =>
+          | .artifactTokensBecome _ newCard fromPred =>
             batches := batches.map (fun b =>
-              if g.tokenBatchIsArtifact b.controller b.printed then
+              let matchesB :=
+                if fromPred == .hasType .artifact then g.tokenBatchIsArtifact b.controller b.printed
+                else EvalExpr.evalObjectPred g { controller := b.controller } (.live (g.tokenBatchProbe b.controller b.printed)) fromPred
+              if matchesB then
                 { b with
                   printed := newCard
                   cause := g.wrapReplacedCause chosen.id b.cause (some b.controller) }

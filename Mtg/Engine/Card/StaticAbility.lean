@@ -1566,19 +1566,20 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
           s!"You control {toOracleStr who { ctx with capitalize := false }}."
         | .play (.lookAtTopOfLibrary _) =>
           "You may look at the top card of your library any time."
-        | .play (.mayPlayFrom _ .library (.hasType .creature) false false false false false none none false) =>
+        | .play (.mayPlayFrom _ .library (.hasType .creature) false false false false false none none false _) =>
           "You may cast creature spells from the top of your library."
-        | .play (.mayPlayFrom _ .library (.hasType .land) true false false false false none none false) =>
+        | .play (.mayPlayFrom _ .library (.hasType .land) true false false false false none none false _) =>
           "You may play lands from the top of your library."
-        | .play (.mayPlayFrom _ .graveyard (.hasType .land) true false false false false none none false) =>
+        | .play (.mayPlayFrom _ .graveyard (.hasType .land) true false false false false none none false _) =>
           "You may play lands from your graveyard."
-        | .play (.mayPlayFrom _ .exile _ false true true false false none none false) =>
+        | .play (.mayPlayFrom _ .exile _ false true true false false none none false _) =>
           "You may cast the exiled card, and mana of any type can be spent to cast that spell."
-        | .play (.mayPlayFrom _ .hand (.stat .manaValue .le (.aggregate .count .one (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])))) false false false true false none none false) =>
+        | .play (.mayPlayFrom _ .hand (.stat .manaValue .le (.aggregate .count .one (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])))) false false false true false none none false _) =>
           "You may cast spells with mana value less than or equal to the number of creatures you control from your hand without paying their mana costs."
-        | .play (.mayPlayFrom _ .graveyard .anyObject false false false false false none none true) =>
-          "Each card in your graveyard has beam me up. The beam me up cost is equal to that spell's mana cost."
-        | .play (.mayPlayFrom _ z (.sameAs .this) lands _ anyC free once z2? enterCtr? _) =>
+        | .play (.mayPlayFrom _ .graveyard .anyObject false false false false false none none true cantRetSrc) =>
+          let tail := if cantRetSrc then s!" {capitalizeAscii ctx.selfRef} can't be beamed up to cast a spell this way." else ""
+          s!"Each card in your graveyard has beam me up. The beam me up cost is equal to that spell's mana cost.{tail}"
+        | .play (.mayPlayFrom _ z (.sameAs .this) lands _ anyC free once z2? enterCtr? _ _) =>
           let verb := if lands then "play" else "cast"
           let zonePhrase (zk : ZoneKind) : String := match zk with
             | .library => "the top of your library"
@@ -1597,10 +1598,11 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
             | some k => s!" If you do, it enters with {k.countersPhrase 1} on it."
             | none => ""
           s!"{oncePfx} may {verb} this card from {fromS}{freeS}{anyS}.{ctrS}"
-        | .play (.mayPlayFrom _ z pred lands _ anyC free once z2? enterCtr? asBeam) =>
+        | .play (.mayPlayFrom _ z pred lands _ anyC free once z2? enterCtr? asBeam cantRetSrc) =>
           if asBeam then
             let what := if pred == .anyObject then "each card" else s!"each {toOracleStr pred { ctx with plural := false, capitalize := false }} card"
-            s!"{capitalizeAscii what} in your graveyard has beam me up. The beam me up cost is equal to that spell's mana cost."
+            let tail := if cantRetSrc then s!" {capitalizeAscii ctx.selfRef} can't be beamed up to cast a spell this way." else ""
+            s!"{capitalizeAscii what} in your graveyard has beam me up. The beam me up cost is equal to that spell's mana cost.{tail}"
           else
             let verb := if lands then "play" else "cast"
             let what :=

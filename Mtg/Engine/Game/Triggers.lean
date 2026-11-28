@@ -213,13 +213,20 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
           match srcIdOpt with
           | some sid => if lifetime then g.modesChosenEver sid else g.modesChosenThisTurn sid
           | none => #[]
-        let available := (List.range ms.modes.size).toArray.filter (fun m => !memory.contains m)
+        let available := (List.range ms.modes.size).toArray.filter (fun m =>
+          !memory.contains m && (ms.modes[m]?.any (g.triggerModeChoosable controller obj)))
+        let allChosen := (List.range ms.modes.size).all (memory.contains ·)
         if available.isEmpty then
           let objName := g.name obj
           let g := g.ceaseToExist obj.id (cause := some (.gameRule .noLegalMode))
           let msg :=
-            if lifetime then
-              s!"all three modes have been chosen. {objName} is removed from the stack (CR 603.3c)"
+            if !allChosen then
+              s!"no legal mode can be chosen. {objName} is removed from the stack (CR 603.3c)"
+            else if lifetime then
+              if ms.modes.size == 3 then
+                s!"all three modes have been chosen. {objName} is removed from the stack (CR 603.3c)"
+              else
+                s!"all modes have been chosen. {objName} is removed from the stack (CR 603.3c)"
             else if ab.effect.body == castingVisionModesBody then
               s!"{objName} has no unused mode and is removed from the stack (CR 603.3c)"
             else

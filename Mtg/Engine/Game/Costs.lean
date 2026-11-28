@@ -262,7 +262,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
         (g.staticAbilities o).any fun ab =>
           ab.anyRule fun cond? r =>
             match r with
-            | .play (.mayPlayFrom who .hand pred _ _ _ true _ _ _ _) =>
+            | .play (.mayPlayFrom who .hand pred _ _ _ true _ _ _ _ _) =>
               EvalExpr.matchesPlayerFilter g env who caster &&
                 cond?.all (EvalExpr.evalCondition g env) &&
                 EvalExpr.evalObjectPred g env spellView pred

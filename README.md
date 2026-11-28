@@ -242,7 +242,9 @@ The first slice of the engine models the two-player game:
   including Station and Spacecraft threshold striations (CR 702.184 / 722.2),
   Beam me up (CR 702.196), facing a dilemma (CR 700.17), Assimilate
   (CR 701.72), Discover (CR 701.57), Sunburst (CR 702.44), strange new worlds
-  distinct-land-name counts, and the set's static and replacement abilities
+  distinct-land-name counts, the set's static and replacement abilities, and
+  all 302 unique official Gatherer Oracle rulings across the 207 TRK cards with
+  rulings
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play,
   including choosing the starting player (CR 103.1), `autopay` to activate

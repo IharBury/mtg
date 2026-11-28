@@ -1963,7 +1963,7 @@ private def repKindAnyObjId (pred : ObjectId → Bool)
   | .shieldCounterDestroy oid
   | .saveFromDestroyRemoveCounters oid _
   | .stunCounterUntap oid => checkValidObjId pred oid
-  | .modifyCountersPut oid _ _ _
+  | .modifyCountersPut oid _ _ _ _ _
   | .exileInsteadOfStackLeave oid
   | .exileInsteadOfGraveyard oid _
   | .addNoncombatDamage oid _
@@ -2012,7 +2012,8 @@ private def specAnyObjId (spec : ContinuousEffectSpec) (pred : ObjectId → Bool
    | .gameRule (.cantBeBlockedExceptByHaste id) _
    | .gameRule (.cantBlock id) _
    | .gameRule (.uncounterable id) _
-   | .gameRule (.commandEmblem id) _ => checkValidObjId pred id
+   | .gameRule (.commandEmblem id) _
+   | .gameRule (.extraTrigger id _) _ => checkValidObjId pred id
    | .replacement r _ =>
      repIdAnyObjId pred r.id prospectivePred ||
        checkValidOptObjId pred r.source ||
@@ -2191,6 +2192,9 @@ private def resolutionChoiceAnyObjId (fc : ResolutionChoice) (pred : ObjectId �
   | .visionMode id _
   | .moonstoneMayExile id
   | .blackGatePlayer id _ => checkValidObjId pred id
+  | .chooseCostCounterKinds sid? _ _ tid _ remIds chosen _ =>
+    checkValidOptObjId pred sid? || checkValidObjId pred tid ||
+      checkValidObjIds pred remIds || checkValidObjIds pred (chosen.map Prod.fst)
   | .extrapolatePick _ ids
   | .mayPutMilledPermanent ids _
   | .castCopiesFree ids _ _
@@ -2550,7 +2554,7 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
   | .finishPostLoyaltyActivated _ _ sid _ aid snap orig _ _ =>
     checkValidOptObjId pred sid || checkValidOptObjId pred aid ||
       snap.any (eventObjAnyObjId pred) || orig.any (gameObjAnyObjId pred)
-  | .payCostPickItems _ aid sid _ rem _ =>
+  | .payCostPickItems _ aid sid _ rem _ _ =>
     checkValidOptObjId pred aid || checkValidOptObjId pred sid || checkValidObjIds pred rem
   | .finishActivationExtraCosts _ sid fo .. =>
     checkValidObjId pred sid || checkValidOptObjId pred fo
@@ -7976,7 +7980,7 @@ private partial def evalStaticCondCore (g : Game) (src : GameObject) (srcCtrl : 
   | .allShare oe char =>
     let objs := g.evalStaticObjsCore src srcCtrl oe colorOf ok ptOf? kwOf? triggerSubject? hasKwExtra? eventIdx?
     match objs[0]? with
-    | none => false
+    | none => true
     | some o0 =>
       match char with
       | .color =>
@@ -12308,7 +12312,7 @@ def replacementPairCommutes (a b : ReplacementOrPrevention) : Bool :=
       | .entersWithCountersSelf .., .entersWithExtraCounters ..
       | .entersWithExtraCounters .., .entersWithCountersSelf .. => true
       | .entersWithExtraCounters _ ka na, .entersWithExtraCounters _ kb nb => ka != kb || na == nb
-      | .modifyCountersPut _ ka addA multA, .modifyCountersPut _ kb addB multB =>
+      | .modifyCountersPut _ ka addA multA _ _, .modifyCountersPut _ kb addB multB _ _ =>
         (ka.isSome && kb.isSome && ka != kb) ||
         (multA == 1 && multB == 1) || (addA == 0 && addB == 0)
       | .addNoncombatDamage _ _, .addNoncombatDamage _ _ => true
@@ -12321,8 +12325,8 @@ def replacementPairCommutes (a b : ReplacementOrPrevention) : Bool :=
       | .multiplyTokenCreation _ _, .multiplyTokenCreation _ _ => true
       | .createExtraTokenWithFood _ _, .multiplyTokenCreation _ _
       | .multiplyTokenCreation _ _, .createExtraTokenWithFood _ _ => true
-      | .artifactTokensBecome _ _, .multiplyTokenCreation _ _
-      | .multiplyTokenCreation _ _, .artifactTokensBecome _ _ => true
+      | .artifactTokensBecome _ _ _, .multiplyTokenCreation _ _
+      | .multiplyTokenCreation _ _, .artifactTokensBecome _ _ _ => true
       | _, _ => false
   | .prevention pa, .replacement sb =>
     match pa.kind, sb.kind with
@@ -13182,8 +13186,21 @@ def replaceCountersPutChoice (g : Game) (target : GameObject) (kind : CounterKin
             | .replacement spec d =>
               if g.durationActive d then
                 match spec.kind with
-                | .modifyCountersPut tid k? add mult =>
-                  if (tid.isNone || tid == some target.id) && (k?.isNone || k? == some kind) then
+                | .modifyCountersPut tid k? add mult scope? byPl? =>
+                  let srcCtrl := spec.controller.getD affected
+                  let srcObj :=
+                    spec.source.bind g.findObject?
+                      |>.orElse (fun _ => spec.source.bind g.damageSourceById?)
+                      |>.getD { (default : GameObject) with id := noSourceSentinelId, owner := srcCtrl, controller := some srcCtrl }
+                  let scopeOk :=
+                    match scope? with
+                    | none => true
+                    | some sc => g.matchesStaticScopeFull srcObj srcCtrl target sc
+                  let putterOk :=
+                    match byPl? with
+                    | none => true
+                    | some pf => who.any (fun p => g.matchStaticPlayerFilterFull srcObj srcCtrl pf p)
+                  if (tid.isNone || tid == some target.id) && scopeOk && putterOk && (k?.isNone || k? == some kind) then
                     let spec' :=
                       if k?.isNone then
                         { spec with id := { spec.id with counterKind := some kind }, affectedPlayer := affected }
@@ -13377,7 +13394,7 @@ def mayCastExiledBySource (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
           ab.anyRule fun cond? r =>
             cond?.all (fun c => g.evalStaticCondFull src p c) &&
               match r with
-              | .play (.mayPlayFrom who .exile pred _ true _ _ _ _ _ _) =>
+              | .play (.mayPlayFrom who .exile pred _ true _ _ _ _ _ _ _) =>
                 g.matchStaticPlayerFilterFull src p who p &&
                   g.evalStaticPredFull src p o pred
               | _ => false
@@ -14684,7 +14701,7 @@ def mayChooseNotToUntap (g : Game) (o : GameObject) : Bool :=
           | .game (.mayChooseNotToUntap (.matching sc)) => g.matchesStaticScopeFull src srcCtrl o sc
           | _ => false
 
-/-- Whether `p` can't sacrifice permanent `o` (CR 701.17). -/
+/-- Whether `p` can't sacrifice permanent `o` (CR 701.21a). -/
 def cantSacrificeObject (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   g.battlefield.any fun src =>
     let srcCtrl := g.controllerOf src |>.getD src.owner
@@ -15290,6 +15307,11 @@ def extraTriggerCopies (g : Game) (controller : PlayerId) (source : GameObject)
             | _ => a) acc
         else acc
       | _ => acc) acc) 0
+  + g.activeEffects.foldl (fun acc (_, eff) =>
+      match eff with
+      | .gameRule (.extraTrigger oid extra) d =>
+        if oid == source.id && g.durationActive d then acc + extra else acc
+      | _ => acc) 0
 
 /-- Append waiting-trigger snapshots, skipping any controller who has already
 lost or left the game (CR 800.4d). -/
@@ -17702,7 +17724,7 @@ private def remapProposalRepKind (ro : ObjectId → ObjectId) : ReplacementKind 
   | .entersBackFaceUp oid => .entersBackFaceUp (oid.map ro)
   | .asEntersAttachAura oid hid => .asEntersAttachAura (ro oid) (ro hid)
   | .entersWithExtraCounters oid k a => .entersWithExtraCounters (oid.map ro) k a
-  | .modifyCountersPut oid k a m => .modifyCountersPut (oid.map ro) k a m
+  | .modifyCountersPut oid k a m sc? bp? => .modifyCountersPut (oid.map ro) k a m sc? bp?
   | .exileInsteadOfStackLeave oid => .exileInsteadOfStackLeave (oid.map ro)
   | .exileInsteadOfGraveyard oid w => .exileInsteadOfGraveyard (oid.map ro) w
   | .shieldCounterDestroy oid => .shieldCounterDestroy (ro oid)
@@ -17737,6 +17759,7 @@ private def remapProposalGameRule (ro : ObjectId → ObjectId) : GameRule → Ga
   | .cantBlock o => .cantBlock (ro o)
   | .uncounterable o => .uncounterable (ro o)
   | .commandEmblem o => .commandEmblem (ro o)
+  | .extraTrigger o n => .extraTrigger (ro o) n
   | r => r
 
 private def remapProposalPlayPermSpec (ro : ObjectId → ObjectId) :
@@ -19759,7 +19782,7 @@ private def hasPlayFromExileLoggedInSlice (g : Game) (oid : ObjectId)
     | .flickerLoop _ _ _ _ _ _ _ _ _ _ (some fi) false
     | .untapStepPermanents _ (some fi)
     | .untapPermanentsLoop _ _ _ _ (some fi)
-    | .payCostPickItems _ _ _ _ _ (some fi)
+    | .payCostPickItems _ _ _ _ _ (some fi) _
     | .finishActivationExtraCosts _ _ _ _ _ _ _ _ _ _ _ (some fi)
     | .finishActivateManaAbilityPicks _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (some fi) _
     | .dealFightDamage _ _ _ _ false (some fi)

@@ -272,7 +272,7 @@ private def contEmitsPfeBeforeBoundary (idx : Nat) : PendingReplacement → Bool
   | .leavePlayersWhoLost _ _ _ _ (some fi)
   | .finishConcede _ _ _ _ _ _ _ (some fi)
   | .concedePlayersLoop _ _ _ _ _ _ _ _ _ _ (some fi)
-  | .payCostPickItems _ _ _ _ _ (some fi)
+  | .payCostPickItems _ _ _ _ _ (some fi) _
   | .finishActivationExtraCosts _ _ _ _ _ _ _ _ _ _ _ (some fi)
   | .finishActivateManaAbilityPicks _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (some fi) _
   | .finishPostStep (.resolveCascadeLoop _ _ _ _ _ (some fi))
@@ -1443,6 +1443,7 @@ def isProposalPromptFor (caster : PlayerId) : Pending → Bool
   | .chooseTeamwork q | .chooseTeamworkCreatures q _
   | .sacrificePermanent q _ | .discardForAdditionalCost q
   | .resolutionChoice q (.costPicks ..) | .resolutionChoice q (.crew ..)
+  | .resolutionChoice q (.chooseCostCounterKinds _ _ _ _ _ _ _ none)
   | .resolutionChoice q (.zemoBoastExile ..) => q == caster
   | _ => false
 
@@ -2234,7 +2235,8 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       (g, .none)
   | .resolutionChoice q choice =>
     match choice with
-    | .costPicks .. | .crew .. | .zemoBoastExile .. =>
+    | .costPicks .. | .crew .. | .zemoBoastExile ..
+    | .chooseCostCounterKinds _ _ _ _ _ _ _ none =>
       if q == p || abortedProp then
         (clearPendingAnd g clearProp, .none)
       else
@@ -2242,6 +2244,17 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           g.withOuterContStashed fun g =>
             (clearPending g).chainPendingReplacement (.finishPostStep (.resumeProposalCostAfterLeave q pending))
         (g, .none)
+    | .chooseCostCounterKinds _ _ _ tid _ remIds chosen (some _) =>
+      if q == p then
+        let g := if clearProp.isEmpty then g else g.changes clearProp
+        let g := declineInterpChoice (clearPending g)
+        (g, .none)
+      else
+        let allIds := (chosen.map Prod.fst).push tid ++ remIds
+        if !allIds.all (fun id => (g.findObject? id).isSome) then
+          let g := declineInterpChoice (clearPending g)
+          (g, .none)
+        else (g, pending)
     | .mayCastUpToFromExile ids left =>
       if q == p then
         let g := g.changes (#[.pendingMayCastFromExile none] ++ clearProp)

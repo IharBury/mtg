@@ -3932,12 +3932,9 @@ def parseStaticAbilityLine (raw : String) (cardName : String := "") : Option (Ar
         | _, _ => pure ()
   if selfLow.startsWith "during your main phase, each card in your graveyard has beam me up" then
     let mainCond : Condition := .all #[.isYourTurn, .any #[.duringPhase .precombatMain, .duringPhase .postcombatMain]]
-    let bmuAb : StaticAbility := .ruleModifying (some mainCond)
-      (.play (.mayPlayFrom .you .graveyard .anyObject false (asBeamMeUp := true)))
-    if selfLow.contains "can't be beamed up" then
-      return some #[bmuAb, .ruleModifying none (.game (.cantBeBeamedUp .self))]
-    else
-      return some #[bmuAb]
+    let exclSelf := selfLow.contains "can't be beamed up"
+    return some #[.ruleModifying (some mainCond)
+      (.play (.mayPlayFrom .you .graveyard .anyObject false (asBeamMeUp := true) (cantReturnSource := exclSelf)))]
   if selfLow.endsWith " can be your commander" then
     return some #[StaticAbility.canBeCommander]
 

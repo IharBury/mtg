@@ -348,6 +348,7 @@ structure ReplacementId where
   grantor : Option ObjectId := none
   player : Option PlayerId := none
   counterKind : Option CounterKind := none
+  effectId : Option EffectId := none
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Every rules event carries the CR mechanism that caused it (CR 603.2, 610.1,

@@ -320,8 +320,18 @@ def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=
             | .applyRule r => pushRules acc cond? r
             | _ => acc) acc
         | _ => acc) acc) #[]
+  let effEntries : Array ((Nat × Nat) × Option Nat) := Id.run do
+    let mut acc := entries
+    for i in [0:g.activeEffects.size] do
+      let (eid, eff) := g.activeEffects[i]!
+      match eff with
+      | .playerRule q (.maxHandSize limit?) d =>
+        if q == p && g.durationActive d then
+          acc := acc.push (g.effectTimestamp eid i, limit?)
+      | _ => pure ()
+    return acc
   let sorted :=
-    entries.qsort (fun a b =>
+    effEntries.qsort (fun a b =>
       decide (a.1.1 < b.1.1 || (a.1.1 == b.1.1 && a.1.2 < b.1.2)))
   sorted.foldl (fun _ (_, maxHs) => maxHs) (g.player p).maxHandSize
 

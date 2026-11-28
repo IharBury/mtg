@@ -172,6 +172,47 @@ def proposalCostPromptStillPayable (g : Game) (caster : PlayerId) (p : Pending) 
                 (tapSource := prop.tapSource)
                 (sacrificeOrExileSource := sacSrc)
                 (discardOrExileHandSource := discSrc))
+        | .resolutionChoice q (.chooseCostCounterKinds sid? picks _ tid kinds remIds chosen none) =>
+          let sacSrc :=
+            prop.sacrificeSource ||
+              prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield)
+          let discSrc :=
+            prop.discardSource ||
+              prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)
+          let allPicks := costPicksWithSacrificeOther picks prop.needsSacrificeOther
+          let allIds := (chosen.map Prod.fst).push tid ++ remIds
+          let pickOk : Bool :=
+            match picks[0]? with
+            | some pick =>
+              match pick with
+              | .custom (.removeCounters _ none _) =>
+                !kinds.isEmpty &&
+                  allIds.size == pick.count &&
+                  allIds.all (fun id =>
+                    (g.findObject? id).any (fun o =>
+                      g.costPickAllows caster sid? pick o
+                        (tapSource := prop.tapSource)
+                        (sacrificeOrExileSource := sacSrc)
+                        (discardOrExileHandSource := discSrc))) &&
+                  allIds.toList.eraseDups.all (fun id =>
+                    let needed := (allIds.filter (· == id)).size
+                    (g.findObject? id).any (fun o =>
+                      o.status.toCounterBag.foldl (fun acc (_, n) => acc + n) 0 >= needed)) &&
+                  chosen.all (fun (id, k) =>
+                    let usedK := (chosen.filter (fun (id', k') => id' == id && k' == k)).size
+                    (g.findObject? id).any (fun o => o.status.counterCount k >= usedK)) &&
+                  kinds.any (fun k =>
+                    let usedK := (chosen.filter (fun (id', k') => id' == tid && k' == k)).size
+                    (g.findObject? tid).any (fun o => o.status.counterCount k > usedK))
+              | _ => false
+            | none => false
+          q == caster && g.sourceStillPayable prop && g.canPayLife caster prop.payLife &&
+            pickOk &&
+            (allPicks.isEmpty ||
+              g.costPicksPayable caster sid? allPicks
+                (tapSource := prop.tapSource)
+                (sacrificeOrExileSource := sacSrc)
+                (discardOrExileHandSource := discSrc))
         | .resolutionChoice q (.crew _ vehicleId n) =>
           let sacSrc :=
             prop.sacrificeSource ||
@@ -1850,6 +1891,7 @@ private partial def probeRestorePendingCore (g : Game) (hasQueuedPending : Bool)
     | .none =>
       resumePopped gCur hasQueuedPending (withFlush := true)
     | .resolutionChoice caster (.costPicks ..)
+    | .resolutionChoice caster (.chooseCostCounterKinds _ _ _ _ _ _ _ none)
     | .resolutionChoice caster (.crew ..)
     | .resolutionChoice caster (.zemoBoastExile ..)
     | .chooseTeamworkCreatures caster _
@@ -2662,13 +2704,14 @@ private partial def advanceProbeOnResumeCore (g : Game) (hasQueuedPending : Bool
         hasQueuedPending := if g1.pending != .none || g1.afterRandom != .none then true else hasQueuedPending,
         reversedProposal := rev,
         preReverseGame? := if rev then some g else none }
-  | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? =>
+  | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? counterKinds =>
     if let .chooseReplacement .. := g.pending then { game := g, hasQueuedPending := true }
     else
       let g1 := g.payCostPickItems p abilityId sourceId pick remainingIds
         (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
         (fromEventIdx? := fromEventIdx?)
+        (counterKinds := counterKinds)
       let rev := !g.hasActiveManaProposalCheckpoint && g.proposedSpell.isSome && g.proposalCheckpoint.isSome && g1.proposedSpell.isNone
       { game := g1,
         hasQueuedPending := if g1.pending != .none || g1.afterRandom != .none then true else hasQueuedPending,
@@ -5091,7 +5134,8 @@ private partial def classifyPayCostPickItems (g : Game) (p : PlayerId)
     (abilityId sourceId : Option ObjectId) (pick : CostPick) (remainingIds : Array ObjectId)
     (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none)
-    (fromEventIdx? : Option Nat := none) : ConcedePriorityOutcome :=
+    (fromEventIdx? : Option Nat := none)
+    (counterKinds : Array CounterKind := #[]) : ConcedePriorityOutcome :=
   if g.over || g.livingPlayers.isEmpty then .settlesPromptOrOver
   else if let .chooseReplacement .. := g.pending then .noGrant
   else
@@ -5099,6 +5143,7 @@ private partial def classifyPayCostPickItems (g : Game) (p : PlayerId)
       (followedByFinishChoice := followedByFinishChoice)
       (followedByExplicitPriority? := followedByExplicitPriority?)
       (fromEventIdx? := fromEventIdx?)
+      (counterKinds := counterKinds)
     if !ok then
       if !g.hasActiveManaProposalCheckpoint && g.currentBatch.isNone then
         match g.proposedSpell with
@@ -5304,9 +5349,9 @@ partial def continuationGrantsPriority (g : Game) (hasQueuedPending : Bool := fa
         followedByFinishChoice followedByExplicitPriority? with
     | .implicitResolutionChoice | .grants _ => true
     | _ => false
-  | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? =>
+  | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? counterKinds =>
     match classifyPayCostPickItems g p abilityId sourceId pick remainingIds
-        followedByFinishChoice followedByExplicitPriority? fromEventIdx? with
+        followedByFinishChoice followedByExplicitPriority? fromEventIdx? counterKinds with
     | .implicitResolutionChoice | .grants _ => true
     | _ => false
   | .finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage sinceIdx removeIndestructible removePlusOnes? loyaltyDelta? putStun fromEventIdx? =>
@@ -5566,9 +5611,9 @@ partial def continuationSettlesControlFlow (g : Game) (hasQueuedPending : Bool :
       | .finishPostStep (.resumeProposalCostAfterLeave p savedP) =>
         classifyResumeProposalCostAfterLeave g p savedP
           followedByFinishChoice followedByExplicitPriority? != .noGrant
-      | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? =>
+      | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? counterKinds =>
         classifyPayCostPickItems g p abilityId sourceId pick remainingIds
-          followedByFinishChoice followedByExplicitPriority? fromEventIdx? != .noGrant
+          followedByFinishChoice followedByExplicitPriority? fromEventIdx? counterKinds != .noGrant
       | .finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage sinceIdx removeIndestructible removePlusOnes? loyaltyDelta? putStun fromEventIdx? =>
         classifyFinishActivationExtraCosts g p sourceId forObject sacrificeSource exileSource stage sinceIdx
           removeIndestructible removePlusOnes? loyaltyDelta? putStun fromEventIdx?
@@ -5763,11 +5808,11 @@ partial def priorityRecipientOfContinuation? (g : Game) (hasQueuedPending : Bool
           followedByFinishChoice followedByExplicitPriority? with
       | .grants (some q) => some q
       | _ => none
-  | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? =>
+  | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? counterKinds =>
     if g.over || g.livingPlayers.isEmpty || hasQueuedPending then none
     else
       match classifyPayCostPickItems g p abilityId sourceId pick remainingIds
-          followedByFinishChoice followedByExplicitPriority? fromEventIdx? with
+          followedByFinishChoice followedByExplicitPriority? fromEventIdx? counterKinds with
       | .grants (some q) => some q
       | _ => none
   | .finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage sinceIdx removeIndestructible removePlusOnes? loyaltyDelta? putStun fromEventIdx? =>
@@ -6015,9 +6060,9 @@ private partial def firstPriorityGrantLeaf? (g : Game) (hasQueuedPending : Bool 
                 followedByFinishChoice followedByExplicitPriority? with
             | .implicitResolutionChoice | .grants none => true
             | _ => false
-          | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? =>
+          | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? counterKinds =>
             match classifyPayCostPickItems g p abilityId sourceId pick remainingIds
-                followedByFinishChoice followedByExplicitPriority? fromEventIdx? with
+                followedByFinishChoice followedByExplicitPriority? fromEventIdx? counterKinds with
             | .implicitResolutionChoice | .grants none => true
             | _ => false
           | .finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage sinceIdx removeIndestructible removePlusOnes? loyaltyDelta? putStun fromEventIdx? =>
@@ -6261,11 +6306,11 @@ private partial def continuationUsesImplicitPendingPriority (g : Game)
           followedByFinishChoice followedByExplicitPriority? with
       | .implicitResolutionChoice => true
       | _ => false
-  | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? =>
+  | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? counterKinds =>
     if g.over || g.livingPlayers.isEmpty then false
     else
       match classifyPayCostPickItems g p abilityId sourceId pick remainingIds
-          followedByFinishChoice followedByExplicitPriority? fromEventIdx? with
+          followedByFinishChoice followedByExplicitPriority? fromEventIdx? counterKinds with
       | .implicitResolutionChoice => true
       | _ => false
   | .finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage sinceIdx removeIndestructible removePlusOnes? loyaltyDelta? putStun fromEventIdx? =>
@@ -7069,6 +7114,7 @@ private partial def hasNestedManaAbilityPostStep (gCur : Game) (curPr : PendingR
     (fuel : Nat := 16) : Bool × Game :=
   let isProposalPromptPending : Pending → Bool
     | .resolutionChoice _ (.costPicks ..)
+    | .resolutionChoice _ (.chooseCostCounterKinds _ _ _ _ _ _ _ none)
     | .resolutionChoice _ (.crew ..)
     | .resolutionChoice _ (.zemoBoastExile ..)
     | .chooseTeamworkCreatures ..
@@ -7156,6 +7202,7 @@ private partial def stepCanReverseProposal (origPr : PendingReplacement) (gCur :
         let g' := g'.popEmptyTopContinuationFrames
         stepCanReverseProposal origPr g' g'.outerPendingReplacements.size nextPr fuel'
     | .restorePending (.resolutionChoice _ (.costPicks ..)) popOuter _ _ rewindProposal
+    | .restorePending (.resolutionChoice _ (.chooseCostCounterKinds _ _ _ _ _ _ _ none)) popOuter _ _ rewindProposal
     | .restorePending (.resolutionChoice _ (.crew ..)) popOuter _ _ rewindProposal
     | .restorePending (.resolutionChoice _ (.zemoBoastExile ..)) popOuter _ _ rewindProposal
     | .restorePending (.chooseTeamworkCreatures ..) popOuter _ _ rewindProposal
@@ -7837,6 +7884,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     | .none =>
       flushUnlessPaysWait (resumePoppedIfNoPrompt g)
     | .resolutionChoice caster (.costPicks ..)
+    | .resolutionChoice caster (.chooseCostCounterKinds _ _ _ _ _ _ _ none)
     | .resolutionChoice caster (.crew ..)
     | .resolutionChoice caster (.zemoBoastExile ..)
     | .chooseTeamworkCreatures caster _
@@ -8102,11 +8150,12 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
   | .endProposalAction clearCkpt =>
     let g := if clearCkpt && g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
     if g.proposalCheckpoint.isSome then g.change .endProposalAction else g
-  | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? =>
+  | .payCostPickItems p abilityId sourceId pick remainingIds fromEventIdx? counterKinds =>
     g.payCostPickItems p abilityId sourceId pick remainingIds
       (followedByFinishChoice := followedByFinishChoice)
       (followedByExplicitPriority? := followedByExplicitPriority?)
       (fromEventIdx? := fromEventIdx?)
+      (counterKinds := counterKinds)
   | .finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage sinceIdx removeIndestructible removePlusOnes? loyaltyDelta? putStun fromEventIdx? =>
     g.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage
       (sinceIdx := sinceIdx)

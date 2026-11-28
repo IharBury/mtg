@@ -139,7 +139,7 @@ Four keyword-specific `CostKind` tags (`convoke`, `ward`, `teamwork`, `cycle`) a
 
 ## Layer 3: Unified One-Shot `Instruction` AST & `Effect`
 
-[`Instruction`](../Mtg/Engine/Card/Ability.lean#L1323-L1344) has **18 top-level constructors**—10 action wrappers aligned with the 12 [`RulesEvent`](../Mtg/Engine/Game/Event.lean#L918-L943) families plus 8 compositional combinators:
+[`Instruction`](../Mtg/Engine/Card/Ability.lean#L1323-L1344) has **18 top-level constructors**—10 action wrappers aligned with the 12 [`RulesEvent`](../Mtg/Engine/Game/Event.lean#L920-L945) families plus 8 compositional combinators:
 
 | `RulesEvent` Family | `Instruction` Constructor & Sub-Family | Coverage |
 | :--- | :--- | :--- |
@@ -158,9 +158,9 @@ Four keyword-specific `CostKind` tags (`convoke`, `ward`, `teamwork`, `cycle`) a
 *(Turn-based `CombatEvent` has no standalone `Instruction` wrapper; one-shot `"put onto the battlefield attacking"` lives on `MoveMods` and fight/bite lives on `DamageOp.fight`.)*
 
 [`Effect`](../Mtg/Engine/Card/Ability.lean#L1349-L1352) carries **exact 2 fields** (`targets : TargetSpec` and `body : Instruction`). All derived queries in [`Effect.lean`](../Mtg/Engine/Card/Effect.lean) are computed purely from those two fields:
-- [`Effect.targetPreference`](../Mtg/Engine/Card/Effect.lean#L2171) & [`Effect.isPreferredDefaultMode`](../Mtg/Engine/Card/Effect.lean#L2186)
-- [`Effect.classifyForAgent`](../Mtg/Engine/Card/Effect.lean#L2237) (`SpellCastKind` in [`SpellResolution.lean`](../Mtg/Engine/Card/SpellResolution.lean#L12-L35)) & [`Effect.classifyAbilityForAgent`](../Mtg/Engine/Card/Effect.lean#L2347)
-- [`Effect.doesNothingAsTrigger`](../Mtg/Engine/Card/Effect.lean#L2149), [`Effect.usesCostPaidObjects`](../Mtg/Engine/Card/Effect.lean#L2417), and canonical [`Effect.toOracle`](../Mtg/Engine/Card/Effect.lean#L2080)
+- [`Effect.targetPreference`](../Mtg/Engine/Card/Effect.lean#L2173) & [`Effect.isPreferredDefaultMode`](../Mtg/Engine/Card/Effect.lean#L2188)
+- [`Effect.classifyForAgent`](../Mtg/Engine/Card/Effect.lean#L2239) (`SpellCastKind` in [`SpellResolution.lean`](../Mtg/Engine/Card/SpellResolution.lean#L12-L35)) & [`Effect.classifyAbilityForAgent`](../Mtg/Engine/Card/Effect.lean#L2349)
+- [`Effect.doesNothingAsTrigger`](../Mtg/Engine/Card/Effect.lean#L2151), [`Effect.usesCostPaidObjects`](../Mtg/Engine/Card/Effect.lean#L2419), and canonical [`Effect.toOracle`](../Mtg/Engine/Card/Effect.lean#L2374)
 
 ---
 

@@ -271,13 +271,120 @@ private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectI
     return advanceCopyRetarget g p copies slotIdx e.targets.size nextStaged
   | _ => throw "Choose a new target for the copy, or decline to keep it"
 
+/-- Walk `remIds` in order, auto-resolving any object whose remaining counter
+removal is unambiguous (only one counter kind left, or all remaining counters
+on that object are being removed) and pausing with `.inl` at the first
+ambiguous object so the player can choose which counter kind to remove. -/
+private def resolveCostCounterKinds (g : Game) (remIds : Array ObjectId)
+    (chosen : Array (ObjectId × CounterKind) := #[]) :
+    Sum (ObjectId × Array CounterKind × Array ObjectId × Array (ObjectId × CounterKind))
+        (Array (ObjectId × CounterKind)) := Id.run do
+  let mut acc := chosen
+  for i in [0:remIds.size] do
+    let tid := remIds[i]!
+    let tail := remIds.extract (i + 1) remIds.size
+    let bag :=
+      match g.findObject? tid with
+      | some o => o.status.toCounterBag
+      | none => #[]
+    let remBag := bag.filterMap fun (k, n) =>
+      let used := (acc.filter (fun (id, ck) => id == tid && ck == k)).size
+      if n > used then some (k, n - used) else none
+    let remTotal := remBag.foldl (fun s (_, n) => s + n) 0
+    let remNeedOnTid := 1 + (tail.filter (· == tid)).size
+    if remBag.isEmpty then
+      return .inr acc
+    else if remBag.size == 1 || remTotal ≤ remNeedOnTid then
+      acc := acc.push (tid, remBag[0]!.1)
+    else
+      return .inl (tid, remBag.map Prod.fst, tail, acc)
+  return .inr acc
+
+/-- Execute `payCostPick` for a proposal `.costPicks` step (either directly or
+after `.chooseCostCounterKinds` resolves ambiguous counter kinds) and continue
+or complete the proposed activation. -/
+private def finishProposalCostPick (g : Game) (p : PlayerId) (prop : ProposedSpell)
+    (sourceId : ObjectId) (picks : Array CostPick) (pick : CostPick)
+    (ids : Array ObjectId) (counterKinds : Array CounterKind)
+    (tapSrc sacSrc discSrc : Bool) : Except String Game := do
+  let outerCont? := g.pendingReplacement
+  let openCont := g.proposalHadOpenContinuation
+  let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+  let g ← g0.payCostPick p (some prop.spellId) (some sourceId) pick ids
+    (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+    (discardOrExileHandSource := discSrc)
+    (callerOuter? := outerCont?)
+    (counterKinds := counterKinds)
+  if g.proposedSpell.isNone then
+    return g
+  let completedAfterContinue (gCur : Game) : Bool :=
+    if prop.kind == .turnFaceUp then
+      (gCur.findObject? prop.spellId).any (fun o => o.isOnBattlefield && !o.status.faceDown)
+    else
+      (gCur.findObject? prop.spellId).any (·.zone == .stack)
+  let restPicks := picks.extract 1 picks.size
+  let pausedBeforeContinue := match g.pending with | .chooseReplacement .. => true | _ => false
+  if !g.propHasRemainingExtraCosts prop (remainingPicks := restPicks) then
+    let g :=
+      if !pausedBeforeContinue then
+        match outerCont? with
+        | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
+        | none => g
+      else g
+    let fallbackName :=
+      if prop.originalSnapshot.name.isEmpty then g.name prop.original
+      else prop.originalSnapshot.name
+    let srcName := ((g.findObject? sourceId).map g.name).getD fallbackName
+    let g := (if g.consecutivePasses != 0 then g.change (.consecutivePasses 0) else g).becomeActivated p
+      srcName (some sourceId) prop.activation
+      (abilityId := some prop.spellId)
+      (sourceSnapshot := some prop.originalSnapshot)
+      (sourceOriginal := some prop.original)
+      (hadOuterReplacement := outerCont?.isSome)
+      (hadOpenContinuation := some openCont)
+    if g.proposedSpell.isNone && !completedAfterContinue g then
+      return g
+    let g :=
+      if pausedBeforeContinue then
+        match outerCont? with
+        | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
+        | none => g
+      else g
+    return g.resumeAfterBecomeCast
+  else if restPicks.isEmpty && !pausedBeforeContinue then
+    let g :=
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
+    let g ← g.continueCostPicks prop restPicks true
+      (hadOuterReplacement := false)
+      (hadOpenContinuation := some openCont)
+    if g.proposedSpell.isNone && !completedAfterContinue g then
+      return g
+    return g.resumeAfterBecomeCast
+  else
+    let g ← g.continueCostPicks prop restPicks true
+      (hadOuterReplacement := outerCont?.isSome)
+      (hadOpenContinuation := some openCont)
+    if g.proposedSpell.isNone && !completedAfterContinue g then
+      return g
+    let g :=
+      match outerCont? with
+      | some outer =>
+        if restPicks.isEmpty && !prop.needsSacrificeOther then
+          g.chainProposalOuterCont p outer (openCont := openCont)
+        else g.chainPendingReplacement outer
+      | none => g
+    return g.resumeAfterBecomeCast
+
 def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : Except String Game := do
   let .resolutionChoice q choice := g.pending | throw "Nothing to choose now"
   if p != q then
     throw s!"Only {(g.player q).name} may choose"
   let isProposalOrAcceptCast : Bool :=
     match choice with
-    | .crew .. | .costPicks .. | .zemoBoastExile .. => true
+    | .crew .. | .costPicks .. | .zemoBoastExile ..
+    | .chooseCostCounterKinds _ _ _ _ _ _ _ none => true
     | .mayCastCascade .. | .mayCastGrima .. | .mayCastCopy ..
     | .mayCastInstantSorceryFromHand .. | .mayCastUpToFromExile ..
     | .mayCastCards .. | .mayCastFromGraveyard .. => answer != .decline
@@ -625,9 +732,17 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
         g.record (GameEvent.triggerModeChosen g.turnNumber sid idx (lifetime := lifetime))
       | none => g
     let g :=
-      if (g.findObject? objId).isSome then
-        g.record (GameEvent.announced g.turnNumber objId (modes := #[idx]))
-      else g
+      match g.findObject? objId with
+      | some obj =>
+        let g := g.record (GameEvent.announced g.turnNumber objId (modes := #[idx]))
+        match (g.triggerModesOf obj)[idx]? with
+        | some m =>
+          if m.requiresTarget then
+            let eff := g.expandEachOpponentEffect p m (some obj.id)
+            g.changeObject obj.id (.abilityEffect (some eff))
+          else g
+        | none => g
+      | none => g
     let g := g.record (GameEvent.facedDilemma g.turnNumber p (source? := some objId))
     let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1}"
     return g.finishResolutionChoice
@@ -825,7 +940,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     else
       throw "Choose creatures to tap to crew (CR 602.2b)"
   | .crew .., _ => throw "Choose creatures to tap, or decline"
-  | .costPicks sourceId picks _, .objects ids =>
+  | .costPicks sourceId picks paid, .objects ids =>
     let some prop := g.proposedSpell | throw "No activation is being paid for"
     let some pick := picks[0]? | throw "No cost is left to pay"
     let tapSrc := prop.tapSource
@@ -841,74 +956,28 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
           (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
           (discardOrExileHandSource := discSrc) then
       return (← gPre.reverseProposedSpell? (resumeContinuation := true))
-    let outerCont? := g.pendingReplacement
-    let openCont := g.proposalHadOpenContinuation
-    let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let g ← g0.payCostPick p (some prop.spellId) (some sourceId) pick ids
-      (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
-      (discardOrExileHandSource := discSrc)
-      (callerOuter? := outerCont?)
-    if g.proposedSpell.isNone then
-      return g
-    let completedAfterContinue (gCur : Game) : Bool :=
-      if prop.kind == .turnFaceUp then
-        (gCur.findObject? prop.spellId).any (fun o => o.isOnBattlefield && !o.status.faceDown)
-      else
-        (gCur.findObject? prop.spellId).any (·.zone == .stack)
-    let restPicks := picks.extract 1 picks.size
-    let pausedBeforeContinue := match g.pending with | .chooseReplacement .. => true | _ => false
-    if !g.propHasRemainingExtraCosts prop (remainingPicks := restPicks) then
-      let g :=
-        if !pausedBeforeContinue then
-          match outerCont? with
-          | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
-          | none => g
-        else g
-      let fallbackName :=
-        if prop.originalSnapshot.name.isEmpty then g.name prop.original
-        else prop.originalSnapshot.name
-      let srcName := ((g.findObject? sourceId).map g.name).getD fallbackName
-      let g := (if g.consecutivePasses != 0 then g.change (.consecutivePasses 0) else g).becomeActivated p
-        srcName (some sourceId) prop.activation
-        (abilityId := some prop.spellId)
-        (sourceSnapshot := some prop.originalSnapshot)
-        (sourceOriginal := some prop.original)
-        (hadOuterReplacement := outerCont?.isSome)
-        (hadOpenContinuation := some openCont)
-      if g.proposedSpell.isNone && !completedAfterContinue g then
-        return g
-      let g :=
-        if pausedBeforeContinue then
-          match outerCont? with
-          | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
-          | none => g
-        else g
-      return g.resumeAfterBecomeCast
-    else if restPicks.isEmpty && !pausedBeforeContinue then
-      let g :=
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer
-        | none => g
-      let g ← g.continueCostPicks prop restPicks true
-        (hadOuterReplacement := false)
-        (hadOpenContinuation := some openCont)
-      if g.proposedSpell.isNone && !completedAfterContinue g then
-        return g
-      return g.resumeAfterBecomeCast
-    else
-      let g ← g.continueCostPicks prop restPicks true
-        (hadOuterReplacement := outerCont?.isSome)
-        (hadOpenContinuation := some openCont)
-      if g.proposedSpell.isNone && !completedAfterContinue g then
-        return g
-      let g :=
-        match outerCont? with
-        | some outer =>
-          if restPicks.isEmpty && !prop.needsSacrificeOther then
-            g.chainProposalOuterCont p outer (openCont := openCont)
-          else g.chainPendingReplacement outer
-        | none => g
-      return g.resumeAfterBecomeCast
+    if let .custom (.removeCounters _ none _) := pick then
+      if ids.size != pick.count then
+        throw s!"Choose {pick.count} to {pick.phrase}"
+      for id in ids do
+        let some o := g.findObject? id | throw "no such object"
+        if !g.costPickAllows p (some sourceId) pick o
+            (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+            (discardOrExileHandSource := discSrc) then
+          throw s!"{g.name o} can't be used to {pick.phrase}"
+      for id in ids.toList.eraseDups do
+        let needed := (ids.filter (· == id)).size
+        let some o := g.findObject? id | throw "no such object"
+        if o.status.toCounterBag.foldl (fun acc (_, n) => acc + n) 0 < needed then
+          throw s!"{g.name o} doesn't have {needed} counter(s) to remove"
+      match resolveCostCounterKinds g ids #[] with
+      | .inl (tid, kinds, remIds, acc) =>
+        return g.change (.pending (.resolutionChoice p
+          (.chooseCostCounterKinds (some sourceId) picks paid tid kinds remIds acc none)))
+      | .inr finalChosen =>
+        return (← finishProposalCostPick g p prop sourceId picks pick
+          (finalChosen.map Prod.fst) (finalChosen.map Prod.snd) tapSrc sacSrc discSrc)
+    finishProposalCostPick g p prop sourceId picks pick ids #[] tapSrc sacSrc discSrc
   | .costPicks _ _ false, .decline =>
     g.reverseProposedSpell? (resumeContinuation := true)
   | .costPicks sourceId picks true, .decline =>
@@ -931,6 +1000,64 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       return (← gPre.reverseProposedSpell? (resumeContinuation := true))
     throw "Part of the cost is already paid; the activation can't be cancelled"
   | .costPicks .., _ => throw "Choose what to pay the cost with, or decline to cancel"
+  | .chooseCostCounterKinds sourceId? picks paid tid kinds remIds chosen nextInstr?, .mode idx =>
+    let some k := kinds[idx]? | throw "Choose a counter kind to remove"
+    match nextInstr? with
+    | none =>
+      let some prop := g.proposedSpell | throw "No activation is being paid for"
+      let some sourceId := sourceId? | throw "No activation is being paid for"
+      let some pick := picks[0]? | throw "No cost is left to pay"
+      let tapSrc := prop.tapSource
+      let sacSrc :=
+        prop.sacrificeSource ||
+          prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield)
+      let discSrc :=
+        prop.discardSource ||
+          prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)
+      if !gPre.proposalCostPromptStillPayable p gPre.pending then
+        return (← gPre.reverseProposedSpell? (resumeContinuation := true))
+      let usedK := (chosen.filter (fun (id', k') => id' == tid && k' == k)).size
+      let some o := g.findObject? tid | throw "no such object"
+      if o.status.counterCount k ≤ usedK then
+        throw s!"{g.name o} doesn't have {k.countersPhrase (usedK + 1)} to remove"
+      let chosen' := chosen.push (tid, k)
+      match resolveCostCounterKinds g remIds chosen' with
+      | .inl (nextTid, nextKinds, nextRemIds, nextAcc) =>
+        return g.change (.pending (.resolutionChoice p
+          (.chooseCostCounterKinds (some sourceId) picks paid nextTid nextKinds nextRemIds nextAcc none)))
+      | .inr finalChosen =>
+        finishProposalCostPick g p prop sourceId picks pick
+          (finalChosen.map Prod.fst) (finalChosen.map Prod.snd) tapSrc sacSrc discSrc
+    | some next =>
+      let some pick := picks[0]? | return g.finishResolutionChoice
+      let usedK := (chosen.filter (fun (id', k') => id' == tid && k' == k)).size
+      let some o := g.findObject? tid | throw "no such object"
+      if o.status.counterCount k ≤ usedK then
+        throw s!"{g.name o} doesn't have {k.countersPhrase (usedK + 1)} to remove"
+      let chosen' := chosen.push (tid, k)
+      match resolveCostCounterKinds g remIds chosen' with
+      | .inl (nextTid, nextKinds, nextRemIds, nextAcc) =>
+        return g.change (.pending (.resolutionChoice p
+          (.chooseCostCounterKinds sourceId? picks paid nextTid nextKinds nextRemIds nextAcc (some next))))
+      | .inr finalChosen =>
+        let abId := resolvingForObj <|> sourceId?
+        let g ← g.payCostPick p abId sourceId? pick (finalChosen.map Prod.fst)
+          (counterKinds := finalChosen.map Prod.snd)
+        let g := applyOrChainInstr g p next sourceId?
+        return g.finishResolutionChoice
+  | .chooseCostCounterKinds _ _ _ _ _ _ _ (some _), .decline =>
+    return g.finishResolutionChoice
+  | .chooseCostCounterKinds _ _ false _ _ _ _ none, .decline =>
+    g.reverseProposedSpell? (resumeContinuation := true)
+  | .chooseCostCounterKinds _ _ true _ _ _ _ none, .decline =>
+    if !gPre.proposalCostPromptStillPayable p gPre.pending then
+      return (← gPre.reverseProposedSpell? (resumeContinuation := true))
+    throw "Part of the cost is already paid; the activation can't be cancelled"
+  | .chooseCostCounterKinds _ _ paid _ _ _ _ nextInstr?, _ =>
+    if nextInstr?.isSome || !paid then
+      throw "Choose a counter kind to remove, or decline"
+    else
+      throw "Choose a counter kind to remove"
   | .chooseCreatureType types, .mode idx =>
     let some sub := types[idx]? | throw "No such creature type"
     let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
@@ -1030,6 +1157,27 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
   | .sacrificeLeastPower _, _ => throw "Choose a creature tied for the least power"
   | .mayPayPickThen pick next sourceId, .objects ids =>
     let abId := resolvingForObj <|> sourceId
+    if let .custom (.removeCounters _ none _) := pick then
+      if ids.size != pick.count then
+        throw s!"Choose {pick.count} to {pick.phrase}"
+      for id in ids do
+        let some o := g.findObject? id | throw "no such object"
+        if !g.costPickAllows p sourceId pick o then
+          throw s!"{g.name o} can't be used to {pick.phrase}"
+      for id in ids.toList.eraseDups do
+        let needed := (ids.filter (· == id)).size
+        let some o := g.findObject? id | throw "no such object"
+        if o.status.toCounterBag.foldl (fun acc (_, n) => acc + n) 0 < needed then
+          throw s!"{g.name o} doesn't have {needed} counter(s) to remove"
+      match resolveCostCounterKinds g ids #[] with
+      | .inl (tid, kinds, remIds, acc) =>
+        return g.change (.pending (.resolutionChoice p
+          (.chooseCostCounterKinds sourceId #[pick] false tid kinds remIds acc (some next))))
+      | .inr finalChosen =>
+        let g ← g.payCostPick p abId sourceId pick (finalChosen.map Prod.fst)
+          (counterKinds := finalChosen.map Prod.snd)
+        let g := applyOrChainInstr g p next sourceId
+        return g.finishResolutionChoice
     let g ← g.payCostPick p abId sourceId pick ids
     let g := applyOrChainInstr g p next sourceId
     return g.finishResolutionChoice
@@ -2276,6 +2424,24 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
           (discardOrExileHandSource := discSrc) with
       | some chosen => .choosePermanents chosen
       | none => .decline
+  | .chooseCostCounterKinds sid? picks paid tid kinds remIds chosen nextInstr? =>
+    let validIdx? := (List.range kinds.size).find? fun idx =>
+      let k := kinds[idx]!
+      let usedK := (chosen.filter (fun (id', k') => id' == tid && k' == k)).size
+      (g.findObject? tid).any (fun o => o.status.counterCount k > usedK)
+    match nextInstr? with
+    | some _ =>
+      match validIdx? with
+      | some idx => .chooseMode idx
+      | none => .decline
+    | none =>
+      if !g.proposalCostPromptStillPayable p (.resolutionChoice p
+          (.chooseCostCounterKinds sid? picks paid tid kinds remIds chosen none)) then
+        .decline
+      else
+        match validIdx? with
+        | some idx => .chooseMode idx
+        | none => .decline
   | .mayPayPickThen .. => .decline
   | .chooseCreatureType types =>
     if types.isEmpty then .decline else .chooseMode 0
