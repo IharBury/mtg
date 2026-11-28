@@ -123,13 +123,13 @@ player view. With `--interactive`, that player is the first named player; with
 | `Mtg/Engine/Catalog/` | Oracle cards used by the demo decks (engine remains card-agnostic). Follows official Gatherer Oracle text; when Scryfall does not match Gatherer, Gatherer is authoritative. |
 | `Mtg/Engine/Tests/` | Compile-time engine smoke tests, card-model guards, test builders, and regression suites. |
 | `Mtg/Demo.lean`, `Mtg/Demo/` | Console demonstration, text rendering, Welcome Deck lists, and deck-list file parsing. |
-| `Mtg/OracleRoundtrip.lean` | `lake exe oracle-roundtrip`: verifies 100% structural `BEq CardDef` round-trip (`renderFullOracle` → `parseOracleCard`) across all 1,292 catalog cards. |
+| `Mtg/OracleRoundtrip.lean` | `lake exe oracle-roundtrip`: verifies 100% structural `BEq CardDef` round-trip (`renderFullOracle` → `parseOracleCard`) across all cards in `supportedCatalogCards`. |
 
 ## Architecture documentation
 
 - [`docs/architecture.md`](docs/architecture.md) — system overview, Comprehensive Rules (6 November 2026) mapping, Lake plugin hierarchy, Lean 4 build invariants, verification gates, and non-goals
-- [`docs/card-and-ability-model.md`](docs/card-and-ability-model.md) — layered `Mtg.Engine.Card` AST (`Primitives`, `Expr`, `Targeting`, `Cost`, `ManaSpec`, `TokenSpec`, `Instruction`, CR 113.3 abilities, `KeywordAbility`, and 21-field `CardDef`)
-- [`docs/oracle-parser.md`](docs/oracle-parser.md) — five-stage compositional Oracle parser (`Mtg/Engine/Card/Parser/*`), recursive quoted-ability parsing, discourse/anaphora binding, canonical `ToOracle` rendering, and 1,292-card round-trip verification
+- [`docs/card-and-ability-model.md`](docs/card-and-ability-model.md) — layered `Mtg.Engine.Card` AST (`Primitives`, `Expr`, `Targeting`, `Cost`, `ManaSpec`, `TokenSpec`, `Instruction`, CR 113.3 abilities, `KeywordAbility`, and `CardDef`)
+- [`docs/oracle-parser.md`](docs/oracle-parser.md) — five-stage compositional Oracle parser (`Mtg/Engine/Card/Parser/*`), recursive quoted-ability parsing, discourse/anaphora binding, canonical `ToOracle` rendering, and full-catalog round-trip verification
 - [`docs/game-evaluation.md`](docs/game-evaluation.md) — runtime evaluation in `Mtg.Engine.Game` (`EvalExpr` & LKI, CR 613 layers, targeting legality, resumable `Instruction` interpreter & `stepEnv`, two-pass trigger matching, and mana/cost/replacement/Demo/Agent integration)
 
 ## Current coverage
@@ -237,14 +237,12 @@ The first slice of the engine models the two-player game:
 - Reality Fracture Commander: every FRC card is parsed and modeled, including
   commander mana, pain and filter lands, morph, impending, cycling, monarch,
   toxic, and the set's triggered and loyalty abilities
-- *Magic: The Gathering | Star Trek* (TRK): all 311 unique cards (497 Gatherer
-  printings) are parsed from official Gatherer Oracle text and modeled,
-  including Station and Spacecraft threshold striations (CR 702.184 / 722.2),
-  Beam me up (CR 702.196), facing a dilemma (CR 700.17), Assimilate
-  (CR 701.72), Discover (CR 701.57), Sunburst (CR 702.44), strange new worlds
-  distinct-land-name counts, the set's static and replacement abilities, and
-  all 302 unique official Gatherer Oracle rulings across the 207 TRK cards with
-  rulings
+- *Magic: The Gathering | Star Trek* (TRK): every TRK card is parsed from
+  official Gatherer Oracle text and modeled, including Station and Spacecraft
+  threshold striations (CR 702.184 / 722.2), Beam me up (CR 702.196), facing
+  a dilemma (CR 700.17), Assimilate (CR 701.72), Discover (CR 701.57),
+  Sunburst (CR 702.44), strange new worlds distinct-land-name counts, the set's
+  static and replacement abilities, and its official Gatherer Oracle rulings
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play,
   including choosing the starting player (CR 103.1), `autopay` to activate
