@@ -416,6 +416,13 @@ inductive ResolutionChoice where
   then the rest (CR 601.2h). `paid` is true once one has been paid, after
   which the activation can no longer be cancelled. -/
   | costPicks (sourceId : ObjectId) (picks : Array CostPick) (paid : Bool)
+  /-- Choose which counter kind to remove from `targetId` (out of `kinds`) while
+  paying a `.removeCounters _ none _` `CostPick` (CR 601.2h; TRK ruling 1158),
+  then continue resolving `remainingIds` and finishing `picks` (or `nextInstr?`). -/
+  | chooseCostCounterKinds (sourceId : Option ObjectId) (picks : Array CostPick)
+      (paid : Bool) (targetId : ObjectId) (kinds : Array CounterKind)
+      (remainingIds : Array ObjectId) (chosen : Array (ObjectId × CounterKind))
+      (nextInstr? : Option Instruction := none)
   /-- You may pay `pick` (sacrifice, discard, …) as an ability of `sourceId`
   resolves; when you do, do `next`. -/
   | mayPayPickThen (pick : CostPick) (next : Instruction) (sourceId : Option ObjectId)

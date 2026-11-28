@@ -351,13 +351,14 @@ def discardCleanupIds (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let deferPfe := ids.size > 1 || fromEventIdx?.isSome
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     return g.chainPendingReplacement
       (.finishPostStep (.discardCleanupIds p ids none (if deferPfe then some loopFromIdx else none)))
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let mut g := g
   for i in [0:ids.size] do
     let id := ids[i]!
@@ -370,7 +371,7 @@ def discardCleanupIds (g : Game) (p : PlayerId) (ids : Array ObjectId)
         (cause := some (.turnBased .cleanupDiscard))
         (deferPlayFromExileLogs := deferPfe)
       g := g'
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused then
         let rem := ids.extract (i + 1) ids.size
         g := g.chainPendingReplacement
           (.finishPostStep (.discardCleanupIds p rem (some (id, owner))
@@ -378,7 +379,7 @@ def discardCleanupIds (g : Game) (p : PlayerId) (ids : Array ObjectId)
         return g
       if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
         g := g.logMsg s!"{pl.name} discards {name} (cleanup)"
-  return if deferPfe then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
+  return if deferPfe then emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx else g
 
 /-- Discard down to maximum hand size (CR 514.1). This turn-based action does
 not use the stack; the engine discards from the back of the hand array. -/
@@ -682,13 +683,14 @@ when removing a stun counter opens a CR 800.4c pause. -/
 def untapStepPermanents (g : Game) (ids : Array ObjectId)
     (fromEventIdx? : Option Nat := none) : Game :=
   if ids.isEmpty && fromEventIdx?.isNone then g
-  else if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+  else if g.sbaPaused then
     g.chainPendingReplacement (.untapStepPermanents ids fromEventIdx?)
   else
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let loopFromIdx := fromEventIdx?.getD g.events.size
   let ap := g.activePlayer
   let apName := (g.player ap).name
@@ -755,7 +757,7 @@ def untapStepPermanents (g : Game) (ids : Array ObjectId)
               if untap.watches .wouldUntap then
                 g := g.record untap
                 g := g.expireWhileTappedEffects o.id (cause := some baseCause)
-    return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    return emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
 
 def expireFinishedNextTurnPlayerControl (g : Game) : Game :=
   let cause := some (EventCause.turnBased .expireAtStepBegin)

@@ -209,7 +209,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   let kwFlashback? := ({ face with keywords := g.currentKeywords card }).flashback
   let hasPlayableFb :=
     kwFlashback?.any (fun mc => !mc.symbols.isEmpty) ||
-      (g.flashbackUntilEot card && !face.manaCost.symbols.isEmpty)
+      (g.hasFlashbackPermission card && !face.manaCost.symbols.isEmpty)
   let usedFlashback :=
     hasPlayableFb && flashback.getD (inGy || GameEvent.castWithFlashback g.events card.id)
   let usedPermAlt := effPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)

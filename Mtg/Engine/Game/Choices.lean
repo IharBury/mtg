@@ -101,13 +101,14 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let deferPfe := ids.size > 1 || fromEventIdx?.isSome
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     return g.chainPendingReplacement
       (.finishPostStep (.discardHandIdsLoop p ids logEach cause (if deferPfe then some loopFromIdx else none)))
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let mut g := g
   for i in [0:ids.size] do
     let id := ids[i]!
@@ -120,7 +121,7 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
         let (g', _) := g.move id (.graveyard owner) none (verb := some .discard)
           (actor := some p) (cause := cause) (deferPlayFromExileLogs := deferPfe)
         g := g'
-        if let .chooseReplacement .. := g.pending then
+        if g.sbaPaused then
           if logEach then
             g := g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
           let rem := ids.extract (i + 1) ids.size
@@ -130,7 +131,7 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
           return g
         if logEach && (g.followMovedToZone? id (· == .graveyard owner)).isSome then
           g := g.logMsg msg
-  return if deferPfe then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
+  return if deferPfe then emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx else g
 
 /-- Pause-safe loop discarding `(p, id)` pairs across multiple players inside a
 single shared open batch (CR 101.4 / 603.2c / 701.9b). -/
@@ -139,13 +140,14 @@ def discardMultiHandIdsLoop (g : Game) (remaining : Array (PlayerId × ObjectId)
     (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let deferPfe := remaining.size > 1 || fromEventIdx?.isSome
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     return g.chainPendingReplacement
       (.finishPostStep (.discardMultiHandIdsLoop remaining logEach cause (if deferPfe then some loopFromIdx else none)))
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let mut g := g
   for i in [0:remaining.size] do
     let (p, id) := remaining[i]!
@@ -158,7 +160,7 @@ def discardMultiHandIdsLoop (g : Game) (remaining : Array (PlayerId × ObjectId)
         let (g', _) := g.move id (.graveyard owner) none (verb := some .discard)
           (actor := some p) (cause := cause) (deferPlayFromExileLogs := deferPfe)
         g := g'
-        if let .chooseReplacement .. := g.pending then
+        if g.sbaPaused then
           if logEach then
             g := g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
           let rem := remaining.extract (i + 1) remaining.size
@@ -168,7 +170,7 @@ def discardMultiHandIdsLoop (g : Game) (remaining : Array (PlayerId × ObjectId)
           return g
         if logEach && (g.followMovedToZone? id (· == .graveyard owner)).isSome then
           g := g.logMsg msg
-  return if deferPfe then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
+  return if deferPfe then emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx else g
 
 /-- Discard every card in `p`'s hand. Zero cards is a legal discard and is
 logged (Sauron, the Dark Lord). -/
@@ -190,7 +192,7 @@ def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := no
           | none => (g, none)
     let g := g.withBatch cause? fun g =>
       g.discardHandIdsLoop p ids (logEach := false) (cause := cause?)
-    if let .chooseReplacement .. := g.pending then
+    if g.sbaPaused then
       g.chainPendingReplacement (.finishPostStep (.logDiscardedCount p preDiscards))
     else
       let discarded := g.loggedDiscards p - preDiscards
@@ -206,7 +208,7 @@ def mayDiscardHandDrawThatMany (g : Game) (p : PlayerId) (doDiscard : Bool) : Ga
     let n := (g.discardableHandIds p).size
     let g := g.discardEntireHand p
     if n == 0 then g
-    else if let .chooseReplacement .. := g.pending then
+    else if g.sbaPaused then
       g.chainPendingReplacement (.finishPostStep (.wheelDrawThenOfferNext p n))
     else g.draw p n
 
@@ -217,7 +219,7 @@ def discardHandThenDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
   else
     let g := g.discardEntireHand p
     if n == 0 then g
-    else if let .chooseReplacement .. := g.pending then
+    else if g.sbaPaused then
       g.chainPendingReplacement (.finishPostStep (.wheelDrawThenOfferNext p n))
     else g.draw p n
 
@@ -239,15 +241,16 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
     (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let deferPfe := remainingIds.size > 1 || fromEventIdx?.isSome
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     return g.chainPendingReplacement
       (.putToBattlefieldLoop controller remainingIds enteredFromIds
         useCardOwner haste tapped isLandEnters onlyFoodArtifact entryLog cause preBattlefield
         (if deferPfe then some loopFromIdx else none))
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let preBf := preBattlefield.getD g.battlefield
   let mut g := g
   let mut entered := enteredFromIds
@@ -272,14 +275,14 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
               (deferPlayFromExileLogs := deferPfe)
         g := g'
         entered := entered.push id
-        if let .chooseReplacement .. := g.pending then
+        if g.sbaPaused then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           return g.chainPendingReplacement
             (.putToBattlefieldLoop controller rem entered
               useCardOwner haste tapped isLandEnters onlyFoodArtifact entryLog cause (some preBf)
               (if deferPfe then some loopFromIdx else none))
   if deferPfe then
-    g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    g := emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
   for j in [0:entered.size] do
     let fromId := entered[j]!
     match g.followMovedToZone? fromId (· == .battlefield) with
@@ -297,7 +300,7 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
       g :=
         if isLandEnters then g.afterLandEnters (g.object! enteredObj.id)
         else g.afterPermanentEnters (g.object! enteredObj.id)
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused then
         let remEntered := entered.extract (j + 1) entered.size
         if !remEntered.isEmpty then
           g := g.chainPendingReplacement
@@ -320,14 +323,15 @@ def exileTopPlayIfYouControlSubtypeLoop (g : Game) (p : PlayerId)
     (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let deferPfe := remaining > 0 || fromEventIdx?.isSome
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+  if g.sbaPaused then
     return g.chainPendingReplacement
       (.finishPostStep (.exileTopPlayIfYouControlSubtypeLoop p subtype remaining cause? movedId?
         (if deferPfe then some loopFromIdx else none)))
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let mut g := g
   if let some fid := movedId? then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
@@ -340,10 +344,10 @@ def exileTopPlayIfYouControlSubtypeLoop (g : Game) (p : PlayerId)
           (cause := cause?)
       g := g.logMsg s!"{(g.player p).name} exiles a card face down"
   if !g.stillInGame p then
-    return if deferPfe then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
+    return if deferPfe then emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx else g
   for i in [0:remaining] do
     if !g.stillInGame p then
-      return if deferPfe then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
+      return if deferPfe then emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx else g
     let pl := g.player p
     if pl.library.isEmpty then
       g := g.logMsg s!"{pl.name} has no cards in their library to exile"
@@ -351,7 +355,7 @@ def exileTopPlayIfYouControlSubtypeLoop (g : Game) (p : PlayerId)
       let top := pl.library.back!
       let (g', _) := g.move top .exile none (cause := cause?) (deferPlayFromExileLogs := true)
       g := g'
-      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+      if g.sbaPaused then
         let rem := remaining - (i + 1)
         return g.chainPendingReplacement
           (.finishPostStep (.exileTopPlayIfYouControlSubtypeLoop p subtype rem cause? (some top) (some loopFromIdx)))
@@ -365,7 +369,7 @@ def exileTopPlayIfYouControlSubtypeLoop (g : Game) (p : PlayerId)
             (cause := cause?)
         g := g.logMsg s!"{pl.name} exiles a card face down"
   if deferPfe then
-    g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    g := emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
   return g
 
 /-- Exile the top `n` cards face down. They may be played while exiled if you
@@ -409,13 +413,14 @@ partial def exileUntilInstantOrSorceryLoop (g : Game) (victim controller : Playe
     (pendingFromId : Option ObjectId := none)
     (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  let preLoop :=
-    match fromEventIdx? with
-    | some idx => g.mkHistoricalGameAt idx
-    | none => g
-  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+  if g.sbaPaused then
     return g.chainPendingReplacement
       (.finishPostStep (.exileUntilInstantOrSorceryLoop victim controller castTheCard cause others pendingFromId (some loopFromIdx)))
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => preLoopStart
   let mut g := g
   let mut others := others
   let mut found : Option ObjectId := none
@@ -433,7 +438,7 @@ partial def exileUntilInstantOrSorceryLoop (g : Game) (victim controller : Playe
     let (g', _) := g.move top .exile none (cause := cause) (deferPlayFromExileLogs := true)
     g := g'
     movedAny := true
-    if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+    if g.sbaPaused then
       return g.chainPendingReplacement
         (.finishPostStep (.exileUntilInstantOrSorceryLoop victim controller castTheCard cause others (some top) (some loopFromIdx)))
     if let some moved := g.followMovedToZone? top (· == .exile) then
@@ -443,7 +448,7 @@ partial def exileUntilInstantOrSorceryLoop (g : Game) (victim controller : Playe
       else
         others := others.push moved.id
   if movedAny then
-    g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    g := emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
   match found with
   | none =>
     if !g.stillInGame victim then return g
@@ -690,7 +695,7 @@ require interactive CR 616.1 selection. -/
 partial def createPermanentCopyTokens (g : Game) (controller : PlayerId) (template : CardDef)
     (remaining : Nat) (cause : Option EventCause := none)
     (priorRecentCount : Option Nat := none) (pushedFrame : Bool := false) : Game :=
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     let baseCount := priorRecentCount.getD g.recentTokenIds.size
     g.chainPendingReplacement
       (.copyPermanentTokens controller template remaining cause baseCount pushedFrame)
@@ -705,7 +710,7 @@ partial def createPermanentCopyTokens (g : Game) (controller : PlayerId) (templa
         let (g', _) := g.createToken controller template (recordRecent := true)
           (cause := batchCause) (count := remaining)
         g := g'
-        if let .chooseReplacement .. := g.pending then
+        if g.sbaPaused then
           return g.chainPendingReplacement
             (.copyPermanentTokens controller template 0 batchCause baseCount pushed)
       let allIds := g.recentTokenIds
@@ -732,7 +737,7 @@ partial def createPermanentCopyTokens (g : Game) (controller : PlayerId) (templa
       if pushed && g.continuations.back? == some {} then
         g := g.change .popContinuationFrame
       return g
-    if let .chooseReplacement .. := g.pending then g
+    if g.sbaPaused then g
     else if g.currentBatch.isNone then g.promptTriggerTargetsIfNeeded
     else g
 

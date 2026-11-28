@@ -832,6 +832,15 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           let what := (picks[0]?.map CostPick.phrase).getD "pay the cost"
           let cancel := if paid then "" else ", or decline to cancel"
           s!"choose what to {what}: choose <id> ...{cancel}"
+        | .chooseCostCounterKinds _ _ paid tid kinds _ _ nextInstr? =>
+          let objName := ((g.findObject? tid).map (fun (o : GameObject) => g.nameWithToken o)).getD s!"object {tid.raw}"
+          let opts := String.intercalate ", "
+            ((List.range kinds.size).map (fun i => s!"{i} {CounterKind.oracleName kinds[i]!}"))
+          let cancel :=
+            if nextInstr?.isSome then ", or decline"
+            else if paid then ""
+            else ", or decline to cancel"
+          s!"choose a counter kind to remove from {objName}: {opts}{cancel}"
         | .mayPayPickThen pick .. => s!"may {pick.phrase}: choose <id>, or decline"
         | .chooseCreatureType types =>
           s!"choose a creature type: {String.intercalate ", " ((List.range types.size).map (fun i => s!"{i} {types[i]!}"))}"

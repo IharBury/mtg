@@ -47,6 +47,7 @@ costs” choice (Uldaros Theorix). X is 0 (ruling 806). -/
 def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   let .resolutionChoice q (.castCopiesFree ids budget castsLeft) := g.pending | throw "No copy may be cast now"
   if p != q then throw s!"Only {(g.player q).name} may cast the copies"
+  if castsLeft == 0 then throw "No copy casts remain"
   if !ids.contains id then throw "That isn't one of the copies"
   let some card := g.findObject? id | throw "no such object"
   if !isCastableObject card then
@@ -61,26 +62,9 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
     throw "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
   if g.opponentsCantCastOnActiveTurn p then
     throw "Opponents can't cast spells during that player's turn"
-  if g.spellNameForbidden face.name then
-    throw s!"Spells named {face.name} can't be cast"
-  if let some err := g.castRestrictionError? p card.id face then
-    throw err
   let mv := g.objectManaValue card
   if mv > budget then
     throw s!"{face.name} has mana value {mv}; only {budget} is left"
-  if face.isLand then throw "A land can't be cast"
-  let tcs := g.evalLayer3 card
-  if isModalSpellFace face &&
-      !(effectiveSpellModes face).any (fun e =>
-        let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
-        g.spellModeIsChoosable p m (some card.id)) &&
-      !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
-    throw s!"{face.name} requires a target"
-  if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
-      !g.castFaceHasLegalTarget p face tcs (some card.id) && !face.allowsZeroTargets then
-    throw s!"{face.name} requires a target"
-  if let some err := g.mandatorySacrificeError? p card.id face then
-    throw err
   let perms := g.playPermissionsFor p card
   let isFree := perms.isEmpty || perms.any (·.withoutManaCost)
   let origPerm : Option PlayPermission :=
@@ -88,6 +72,34 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
     else
       some ((g.paidResolutionOrigPerm? p card (face? := some face)).getD
         { player := p, ignoreTiming := true })
+  let lifeInstead := !isFree && origPerm.any (·.payLifeEqualManaValue)
+  let forcedPerm :=
+    isFree || origPerm.any (fun pm =>
+      pm.withoutManaCost || pm.payLifeEqualManaValue || pm.prepareSource.isSome)
+  let kwFace := { face with keywords := g.currentKeywords card }
+  let canMorph :=
+    !forcedPerm && kwFace.morph.isSome && kwFace.kicker.isNone &&
+      !g.spellNameForbidden ""
+  if g.isLand card && !canMorph then throw "A land can't be cast"
+  if !canMorph then
+    if g.spellNameForbidden face.name then
+      throw s!"Spells named {face.name} can't be cast"
+    if let some err := g.castRestrictionError? p card.id face then
+      throw err
+    let tcs := g.evalLayer3 card
+    if isModalSpellFace face &&
+        !(effectiveSpellModes face).any (fun e =>
+          let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+          g.spellModeIsChoosable p m (some card.id)) &&
+        !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
+      throw s!"{face.name} requires a target"
+    if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
+        !g.castFaceHasLegalTarget p face tcs (some card.id) && !face.allowsZeroTargets then
+      throw s!"{face.name} requires a target"
+    if let some err := g.mandatorySacrificeError? p card.id face then
+      throw err
+  if lifeInstead && !g.canPayLife p mv then
+    throw s!"{(g.player p).name} can't pay {mv} life to cast {face.name} (CR 119.4)"
   let rest := ids.filter (· != id)
   let g := g.change .saveProposalCheckpoint
   let g :=
@@ -101,7 +113,10 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   if !(g.findObject? newId).any (·.zone == .stack) then
     throw s!"{face.name} cannot be moved to the stack"
   let g := g.putStackEntry p newId
-  let way : CastWay := if isFree then .alternative "free copy" else .normal
+  let way : CastWay :=
+    if isFree then .alternative "free copy"
+    else if lifeInstead then .alternative "pay life"
+    else .normal
   let g := g.record (GameEvent.proposed g.turnNumber newId p card.zone way)
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
   let g := g.logMsg
@@ -115,8 +130,9 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let needsSacrifice := (g.mandatorySacrificeFilterFor? card face).isSome
   let altCostUsed :=
     isFree || origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
+  let payLife := if lifeInstead then mv else 0
   let prop : ProposedSpell := {
-    caster := p, cost, spellId := newId, original := card
+    caster := p, cost, payLife, spellId := newId, original := card
     originalSnapshot := origSnap, origPerm
     needsSacrificeOther := needsSacrifice
     alternativeCost := altCostUsed, resolutionCast := true }
@@ -255,13 +271,120 @@ private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectI
     return advanceCopyRetarget g p copies slotIdx e.targets.size nextStaged
   | _ => throw "Choose a new target for the copy, or decline to keep it"
 
+/-- Walk `remIds` in order, auto-resolving any object whose remaining counter
+removal is unambiguous (only one counter kind left, or all remaining counters
+on that object are being removed) and pausing with `.inl` at the first
+ambiguous object so the player can choose which counter kind to remove. -/
+private def resolveCostCounterKinds (g : Game) (remIds : Array ObjectId)
+    (chosen : Array (ObjectId × CounterKind) := #[]) :
+    Sum (ObjectId × Array CounterKind × Array ObjectId × Array (ObjectId × CounterKind))
+        (Array (ObjectId × CounterKind)) := Id.run do
+  let mut acc := chosen
+  for i in [0:remIds.size] do
+    let tid := remIds[i]!
+    let tail := remIds.extract (i + 1) remIds.size
+    let bag :=
+      match g.findObject? tid with
+      | some o => o.status.toCounterBag
+      | none => #[]
+    let remBag := bag.filterMap fun (k, n) =>
+      let used := (acc.filter (fun (id, ck) => id == tid && ck == k)).size
+      if n > used then some (k, n - used) else none
+    let remTotal := remBag.foldl (fun s (_, n) => s + n) 0
+    let remNeedOnTid := 1 + (tail.filter (· == tid)).size
+    if remBag.isEmpty then
+      return .inr acc
+    else if remBag.size == 1 || remTotal ≤ remNeedOnTid then
+      acc := acc.push (tid, remBag[0]!.1)
+    else
+      return .inl (tid, remBag.map Prod.fst, tail, acc)
+  return .inr acc
+
+/-- Execute `payCostPick` for a proposal `.costPicks` step (either directly or
+after `.chooseCostCounterKinds` resolves ambiguous counter kinds) and continue
+or complete the proposed activation. -/
+private def finishProposalCostPick (g : Game) (p : PlayerId) (prop : ProposedSpell)
+    (sourceId : ObjectId) (picks : Array CostPick) (pick : CostPick)
+    (ids : Array ObjectId) (counterKinds : Array CounterKind)
+    (tapSrc sacSrc discSrc : Bool) : Except String Game := do
+  let outerCont? := g.pendingReplacement
+  let openCont := g.proposalHadOpenContinuation
+  let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+  let g ← g0.payCostPick p (some prop.spellId) (some sourceId) pick ids
+    (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+    (discardOrExileHandSource := discSrc)
+    (callerOuter? := outerCont?)
+    (counterKinds := counterKinds)
+  if g.proposedSpell.isNone then
+    return g
+  let completedAfterContinue (gCur : Game) : Bool :=
+    if prop.kind == .turnFaceUp then
+      (gCur.findObject? prop.spellId).any (fun o => o.isOnBattlefield && !o.status.faceDown)
+    else
+      (gCur.findObject? prop.spellId).any (·.zone == .stack)
+  let restPicks := picks.extract 1 picks.size
+  let pausedBeforeContinue := match g.pending with | .chooseReplacement .. => true | _ => false
+  if !g.propHasRemainingExtraCosts prop (remainingPicks := restPicks) then
+    let g :=
+      if !pausedBeforeContinue then
+        match outerCont? with
+        | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
+        | none => g
+      else g
+    let fallbackName :=
+      if prop.originalSnapshot.name.isEmpty then g.name prop.original
+      else prop.originalSnapshot.name
+    let srcName := ((g.findObject? sourceId).map g.name).getD fallbackName
+    let g := (if g.consecutivePasses != 0 then g.change (.consecutivePasses 0) else g).becomeActivated p
+      srcName (some sourceId) prop.activation
+      (abilityId := some prop.spellId)
+      (sourceSnapshot := some prop.originalSnapshot)
+      (sourceOriginal := some prop.original)
+      (hadOuterReplacement := outerCont?.isSome)
+      (hadOpenContinuation := some openCont)
+    if g.proposedSpell.isNone && !completedAfterContinue g then
+      return g
+    let g :=
+      if pausedBeforeContinue then
+        match outerCont? with
+        | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
+        | none => g
+      else g
+    return g.resumeAfterBecomeCast
+  else if restPicks.isEmpty && !pausedBeforeContinue then
+    let g :=
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
+    let g ← g.continueCostPicks prop restPicks true
+      (hadOuterReplacement := false)
+      (hadOpenContinuation := some openCont)
+    if g.proposedSpell.isNone && !completedAfterContinue g then
+      return g
+    return g.resumeAfterBecomeCast
+  else
+    let g ← g.continueCostPicks prop restPicks true
+      (hadOuterReplacement := outerCont?.isSome)
+      (hadOpenContinuation := some openCont)
+    if g.proposedSpell.isNone && !completedAfterContinue g then
+      return g
+    let g :=
+      match outerCont? with
+      | some outer =>
+        if restPicks.isEmpty && !prop.needsSacrificeOther then
+          g.chainProposalOuterCont p outer (openCont := openCont)
+        else g.chainPendingReplacement outer
+      | none => g
+    return g.resumeAfterBecomeCast
+
 def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : Except String Game := do
   let .resolutionChoice q choice := g.pending | throw "Nothing to choose now"
   if p != q then
     throw s!"Only {(g.player q).name} may choose"
   let isProposalOrAcceptCast : Bool :=
     match choice with
-    | .crew .. | .costPicks .. | .zemoBoastExile .. => true
+    | .crew .. | .costPicks .. | .zemoBoastExile ..
+    | .chooseCostCounterKinds _ _ _ _ _ _ _ none => true
     | .mayCastCascade .. | .mayCastGrima .. | .mayCastCopy ..
     | .mayCastInstantSorceryFromHand .. | .mayCastUpToFromExile ..
     | .mayCastCards .. | .mayCastFromGraveyard .. => answer != .decline
@@ -284,6 +407,9 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     if !(g.revealedHandChoices victim permanentOnly).contains id then
       throw "That card can't be chosen"
     return (g.discardFromHand victim id (chooser := some p)).finishResolutionChoice
+  | .discardFromRevealedHand victim permanentOnly, .decline =>
+    if (g.revealedHandChoices victim permanentOnly).isEmpty then return g.finishResolutionChoice
+    else throw "Choose one card from the revealed hand"
   | .discardFromRevealedHand .., _ => throw "Choose one card from the revealed hand"
   | .mayWheel n rest accepted, .accept | .mayWheel n rest accepted, .decline =>
     let accepted' := if answer == .accept then accepted.push p else accepted
@@ -346,7 +472,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       g.exileCardsLoop toExile
     let exileLog := s!"{(g.player p).name} exiles five cards named Sphinx's Approach"
     let g :=
-      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+      if g.sbaPaused then
         g.chainPendingReplacement (.seq (.logMessage exileLog) (.finishPostStep (.searchLibrarySphinx p)))
       else
         (g.logMsg exileLog).runPostStep (.searchLibrarySphinx p)
@@ -370,15 +496,19 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
   | .extrapolateReveal, _ => throw "Choose two cards from outside the game, or decline"
   | .extrapolatePick revealer ids, .objects #[id] =>
     if !ids.contains id then throw "Choose one of the revealed cards"
-    let name := g.name (g.object! id)
+    let some o := g.findObject? id | throw "no such object"
+    let name := g.name o
     let (g, _) := g.move id (.hand revealer) none
     let g :=
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused then
         g.chainPendingReplacement (.finishPostStep (.logPutsIntoHand revealer id name))
       else if (g.followMovedToZone? id (· == Zone.hand revealer)).isSome then
         g.logMsg s!"{(g.player revealer).name} puts {name} into their hand"
       else g
     return g.finishResolutionChoice
+  | .extrapolatePick _ ids, .decline =>
+    if !ids.any (fun id => (g.findObject? id).isSome) then return g.finishResolutionChoice
+    else throw "Choose one of the revealed cards"
   | .extrapolatePick .., _ => throw "Choose one of the revealed cards"
   | .mayPutMilledPermanent ids life, .objects #[id] =>
     if !ids.contains id then throw "Choose a permanent card milled this way"
@@ -423,6 +553,10 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       else
         g.runPostStep (.drawOneThenPlusOnesForDiscards p causeId)
     return g.finishResolutionChoice
+  | .discardThen _ _ causeId, .decline =>
+    if (g.discardableHandIds p).isEmpty then
+      return (g.runPostStep (.drawOneThenPlusOnesForDiscards p causeId)).finishResolutionChoice
+    else throw "Choose a card to discard"
   | .discardThen .., _ => throw "Choose a card to discard"
   | .discardThenStun n sourceId, .objects ids =>
     let hand := g.discardableHandIds p
@@ -466,7 +600,8 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
   | .mayMovePlusOne _, _ => throw "Answer accept or decline"
   | .exileFromRevealedHand victim sourceId, .objects #[id] =>
     if !(g.revealedHandChoices victim false).contains id then throw "Choose a nonland card"
-    let name := g.name (g.object! id)
+    let some o := g.findObject? id | throw "no such object"
+    let name := g.name o
     let (g, _) := g.move id .exile none
     let g :=
       if let .chooseReplacement .. := g.pending then
@@ -475,6 +610,9 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       else
         g.runPostStep (.exileFromRevealedHandAfterMove p victim id name sourceId)
     return g.finishResolutionChoice
+  | .exileFromRevealedHand victim _, .decline =>
+    if (g.revealedHandChoices victim false).isEmpty then return g.finishResolutionChoice
+    else throw "Choose a nonland card from the revealed hand"
   | .exileFromRevealedHand .., _ => throw "Choose a nonland card from the revealed hand"
   | .castCopiesFree ids _ _, .decline =>
     let g := g.withBatch none fun g =>
@@ -628,6 +766,9 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
         return (g.grantKeywordsUntilEot o #[choice]).finishResolutionChoice
       else return g.finishResolutionChoice
     | none => return g.finishResolutionChoice
+  | .chooseKeyword _ options, .decline =>
+    if options.isEmpty then return g.finishResolutionChoice
+    else throw "Choose one of the keywords"
   | .chooseKeyword .., _ => throw "Choose one of the keywords"
   | .sacrificeCreatureEach controller rest chosen, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
@@ -635,6 +776,10 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       throw "Choose a creature you control"
     let g := g.logMsg s!"{(g.player p).name} chooses {g.name o}"
     return (g.continueSacrificeEach controller rest (chosen.push id)).finishResolutionChoice
+  | .sacrificeCreatureEach controller rest chosen, .decline =>
+    if (g.creaturesControlledBy p).isEmpty then
+      return (g.continueSacrificeEach controller rest chosen).finishResolutionChoice
+    else throw "Choose a creature to sacrifice"
   | .sacrificeCreatureEach .., _ => throw "Choose a creature to sacrifice"
   | .discardTwo controller rest draws chosen, .objects ids =>
     let hand := g.discardableHandIds p
@@ -642,6 +787,11 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       throw "Choose two different cards from your hand"
     let g := g.continueDiscardTwo controller rest draws (chosen.push (p, ids))
     return g.finishResolutionChoice
+  | .discardTwo controller rest draws chosen, .decline =>
+    let hand := g.discardableHandIds p
+    if hand.size < 2 then
+      return (g.continueDiscardTwo controller rest draws (chosen.push (p, hand))).finishResolutionChoice
+    else throw "Choose two cards to discard"
   | .discardTwo .., _ => throw "Choose two cards to discard"
   | .mayMoveAllCounters fromId toId, .accept =>
     match g.findObject? fromId, g.findObject? toId with
@@ -790,7 +940,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     else
       throw "Choose creatures to tap to crew (CR 602.2b)"
   | .crew .., _ => throw "Choose creatures to tap, or decline"
-  | .costPicks sourceId picks _, .objects ids =>
+  | .costPicks sourceId picks paid, .objects ids =>
     let some prop := g.proposedSpell | throw "No activation is being paid for"
     let some pick := picks[0]? | throw "No cost is left to pay"
     let tapSrc := prop.tapSource
@@ -806,74 +956,28 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
           (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
           (discardOrExileHandSource := discSrc) then
       return (← gPre.reverseProposedSpell? (resumeContinuation := true))
-    let outerCont? := g.pendingReplacement
-    let openCont := g.proposalHadOpenContinuation
-    let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let g ← g0.payCostPick p (some prop.spellId) (some sourceId) pick ids
-      (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
-      (discardOrExileHandSource := discSrc)
-      (callerOuter? := outerCont?)
-    if g.proposedSpell.isNone then
-      return g
-    let completedAfterContinue (gCur : Game) : Bool :=
-      if prop.kind == .turnFaceUp then
-        (gCur.findObject? prop.spellId).any (fun o => o.isOnBattlefield && !o.status.faceDown)
-      else
-        (gCur.findObject? prop.spellId).any (·.zone == .stack)
-    let restPicks := picks.extract 1 picks.size
-    let pausedBeforeContinue := match g.pending with | .chooseReplacement .. => true | _ => false
-    if !g.propHasRemainingExtraCosts prop (remainingPicks := restPicks) then
-      let g :=
-        if !pausedBeforeContinue then
-          match outerCont? with
-          | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
-          | none => g
-        else g
-      let fallbackName :=
-        if prop.originalSnapshot.name.isEmpty then g.name prop.original
-        else prop.originalSnapshot.name
-      let srcName := ((g.findObject? sourceId).map g.name).getD fallbackName
-      let g := (if g.consecutivePasses != 0 then g.change (.consecutivePasses 0) else g).becomeActivated p
-        srcName (some sourceId) prop.activation
-        (abilityId := some prop.spellId)
-        (sourceSnapshot := some prop.originalSnapshot)
-        (sourceOriginal := some prop.original)
-        (hadOuterReplacement := outerCont?.isSome)
-        (hadOpenContinuation := some openCont)
-      if g.proposedSpell.isNone && !completedAfterContinue g then
-        return g
-      let g :=
-        if pausedBeforeContinue then
-          match outerCont? with
-          | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
-          | none => g
-        else g
-      return g.resumeAfterBecomeCast
-    else if restPicks.isEmpty && !pausedBeforeContinue then
-      let g :=
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer
-        | none => g
-      let g ← g.continueCostPicks prop restPicks true
-        (hadOuterReplacement := false)
-        (hadOpenContinuation := some openCont)
-      if g.proposedSpell.isNone && !completedAfterContinue g then
-        return g
-      return g.resumeAfterBecomeCast
-    else
-      let g ← g.continueCostPicks prop restPicks true
-        (hadOuterReplacement := outerCont?.isSome)
-        (hadOpenContinuation := some openCont)
-      if g.proposedSpell.isNone && !completedAfterContinue g then
-        return g
-      let g :=
-        match outerCont? with
-        | some outer =>
-          if restPicks.isEmpty && !prop.needsSacrificeOther then
-            g.chainProposalOuterCont p outer (openCont := openCont)
-          else g.chainPendingReplacement outer
-        | none => g
-      return g.resumeAfterBecomeCast
+    if let .custom (.removeCounters _ none _) := pick then
+      if ids.size != pick.count then
+        throw s!"Choose {pick.count} to {pick.phrase}"
+      for id in ids do
+        let some o := g.findObject? id | throw "no such object"
+        if !g.costPickAllows p (some sourceId) pick o
+            (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+            (discardOrExileHandSource := discSrc) then
+          throw s!"{g.name o} can't be used to {pick.phrase}"
+      for id in ids.toList.eraseDups do
+        let needed := (ids.filter (· == id)).size
+        let some o := g.findObject? id | throw "no such object"
+        if o.status.toCounterBag.foldl (fun acc (_, n) => acc + n) 0 < needed then
+          throw s!"{g.name o} doesn't have {needed} counter(s) to remove"
+      match resolveCostCounterKinds g ids #[] with
+      | .inl (tid, kinds, remIds, acc) =>
+        return g.change (.pending (.resolutionChoice p
+          (.chooseCostCounterKinds (some sourceId) picks paid tid kinds remIds acc none)))
+      | .inr finalChosen =>
+        return (← finishProposalCostPick g p prop sourceId picks pick
+          (finalChosen.map Prod.fst) (finalChosen.map Prod.snd) tapSrc sacSrc discSrc)
+    finishProposalCostPick g p prop sourceId picks pick ids #[] tapSrc sacSrc discSrc
   | .costPicks _ _ false, .decline =>
     g.reverseProposedSpell? (resumeContinuation := true)
   | .costPicks sourceId picks true, .decline =>
@@ -888,7 +992,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
           prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)
     let allPicks :=
       costPicksWithSacrificeOther picks (gPre.proposedSpell.any (·.needsSacrificeOther))
-    if !gPre.proposalCostPromptStillPayable p gPre.pending ||
+    if picks.isEmpty || !gPre.proposalCostPromptStillPayable p gPre.pending ||
         (!allPicks.isEmpty &&
           !gPre.costPicksPayable p (some sourceId) allPicks
             (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
@@ -896,6 +1000,64 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       return (← gPre.reverseProposedSpell? (resumeContinuation := true))
     throw "Part of the cost is already paid; the activation can't be cancelled"
   | .costPicks .., _ => throw "Choose what to pay the cost with, or decline to cancel"
+  | .chooseCostCounterKinds sourceId? picks paid tid kinds remIds chosen nextInstr?, .mode idx =>
+    let some k := kinds[idx]? | throw "Choose a counter kind to remove"
+    match nextInstr? with
+    | none =>
+      let some prop := g.proposedSpell | throw "No activation is being paid for"
+      let some sourceId := sourceId? | throw "No activation is being paid for"
+      let some pick := picks[0]? | throw "No cost is left to pay"
+      let tapSrc := prop.tapSource
+      let sacSrc :=
+        prop.sacrificeSource ||
+          prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield)
+      let discSrc :=
+        prop.discardSource ||
+          prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)
+      if !gPre.proposalCostPromptStillPayable p gPre.pending then
+        return (← gPre.reverseProposedSpell? (resumeContinuation := true))
+      let usedK := (chosen.filter (fun (id', k') => id' == tid && k' == k)).size
+      let some o := g.findObject? tid | throw "no such object"
+      if o.status.counterCount k ≤ usedK then
+        throw s!"{g.name o} doesn't have {k.countersPhrase (usedK + 1)} to remove"
+      let chosen' := chosen.push (tid, k)
+      match resolveCostCounterKinds g remIds chosen' with
+      | .inl (nextTid, nextKinds, nextRemIds, nextAcc) =>
+        return g.change (.pending (.resolutionChoice p
+          (.chooseCostCounterKinds (some sourceId) picks paid nextTid nextKinds nextRemIds nextAcc none)))
+      | .inr finalChosen =>
+        finishProposalCostPick g p prop sourceId picks pick
+          (finalChosen.map Prod.fst) (finalChosen.map Prod.snd) tapSrc sacSrc discSrc
+    | some next =>
+      let some pick := picks[0]? | return g.finishResolutionChoice
+      let usedK := (chosen.filter (fun (id', k') => id' == tid && k' == k)).size
+      let some o := g.findObject? tid | throw "no such object"
+      if o.status.counterCount k ≤ usedK then
+        throw s!"{g.name o} doesn't have {k.countersPhrase (usedK + 1)} to remove"
+      let chosen' := chosen.push (tid, k)
+      match resolveCostCounterKinds g remIds chosen' with
+      | .inl (nextTid, nextKinds, nextRemIds, nextAcc) =>
+        return g.change (.pending (.resolutionChoice p
+          (.chooseCostCounterKinds sourceId? picks paid nextTid nextKinds nextRemIds nextAcc (some next))))
+      | .inr finalChosen =>
+        let abId := resolvingForObj <|> sourceId?
+        let g ← g.payCostPick p abId sourceId? pick (finalChosen.map Prod.fst)
+          (counterKinds := finalChosen.map Prod.snd)
+        let g := applyOrChainInstr g p next sourceId?
+        return g.finishResolutionChoice
+  | .chooseCostCounterKinds _ _ _ _ _ _ _ (some _), .decline =>
+    return g.finishResolutionChoice
+  | .chooseCostCounterKinds _ _ false _ _ _ _ none, .decline =>
+    g.reverseProposedSpell? (resumeContinuation := true)
+  | .chooseCostCounterKinds _ _ true _ _ _ _ none, .decline =>
+    if !gPre.proposalCostPromptStillPayable p gPre.pending then
+      return (← gPre.reverseProposedSpell? (resumeContinuation := true))
+    throw "Part of the cost is already paid; the activation can't be cancelled"
+  | .chooseCostCounterKinds _ _ paid _ _ _ _ nextInstr?, _ =>
+    if nextInstr?.isSome || !paid then
+      throw "Choose a counter kind to remove, or decline"
+    else
+      throw "Choose a counter kind to remove"
   | .chooseCreatureType types, .mode idx =>
     let some sub := types[idx]? | throw "No such creature type"
     let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
@@ -912,6 +1074,9 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     | none =>
       let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o sub)).size
       return (g.createTreasureTokens p n).finishResolutionChoice
+  | .chooseCreatureType types, .decline =>
+    if types.isEmpty then return g.finishResolutionChoice
+    else throw "Choose a creature type"
   | .chooseCreatureType _, _ => throw "Choose a creature type"
   | .maySacrificeAnotherCreatureForPower sourceId, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
@@ -985,9 +1150,34 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
   | .sacrificeLeastPower ids, .objects #[id] =>
     if !ids.contains id then throw "Choose a creature tied for the least power"
     return (g.sacrificeLeastPowerCreature p (some id)).finishResolutionChoice
+  | .sacrificeLeastPower ids, .decline =>
+    if !ids.any (fun id => (g.findObject? id).any (fun o => o.isOnBattlefield && g.controlledBy o p)) then
+      return g.finishResolutionChoice
+    else throw "Choose a creature tied for the least power"
   | .sacrificeLeastPower _, _ => throw "Choose a creature tied for the least power"
   | .mayPayPickThen pick next sourceId, .objects ids =>
     let abId := resolvingForObj <|> sourceId
+    if let .custom (.removeCounters _ none _) := pick then
+      if ids.size != pick.count then
+        throw s!"Choose {pick.count} to {pick.phrase}"
+      for id in ids do
+        let some o := g.findObject? id | throw "no such object"
+        if !g.costPickAllows p sourceId pick o then
+          throw s!"{g.name o} can't be used to {pick.phrase}"
+      for id in ids.toList.eraseDups do
+        let needed := (ids.filter (· == id)).size
+        let some o := g.findObject? id | throw "no such object"
+        if o.status.toCounterBag.foldl (fun acc (_, n) => acc + n) 0 < needed then
+          throw s!"{g.name o} doesn't have {needed} counter(s) to remove"
+      match resolveCostCounterKinds g ids #[] with
+      | .inl (tid, kinds, remIds, acc) =>
+        return g.change (.pending (.resolutionChoice p
+          (.chooseCostCounterKinds sourceId #[pick] false tid kinds remIds acc (some next))))
+      | .inr finalChosen =>
+        let g ← g.payCostPick p abId sourceId pick (finalChosen.map Prod.fst)
+          (counterKinds := finalChosen.map Prod.snd)
+        let g := applyOrChainInstr g p next sourceId
+        return g.finishResolutionChoice
     let g ← g.payCostPick p abId sourceId pick ids
     let g := applyOrChainInstr g p next sourceId
     return g.finishResolutionChoice
@@ -1021,6 +1211,10 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     if !o.isOnBattlefield || !g.isCreature o || o.printed.isToken || !g.controlledBy o p then
       throw "Choose a nontoken creature you control"
     return (g.continueNontokenSacrifices rest (chosen.push id)).finishResolutionChoice
+  | .sacrificeNontokenEach rest chosen, .decline =>
+    if ((g.creaturesControlledBy p).filter (!·.printed.isToken)).isEmpty then
+      return (g.continueNontokenSacrifices rest chosen).finishResolutionChoice
+    else throw "Choose a nontoken creature to sacrifice"
   | .sacrificeNontokenEach .., _ => throw "Choose a nontoken creature to sacrifice"
   | .mayCreateTokens kind n copyEnv, .accept =>
     return (g.createKindTokens p kind n (copyEnv := copyEnv)).finishResolutionChoice
@@ -1038,7 +1232,8 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
   | .mayBecomeBasePT .., _ => throw "Answer accept or decline"
   | .mayRevealToHand looked eligible anyOrder, .objects #[id] =>
     if !eligible.contains id then throw "Choose one of the eligible cards"
-    let name := g.name (g.object! id)
+    let some o := g.findObject? id | throw "no such object"
+    let name := g.name o
     let (g, cause) := g.allocDelayedCause (some p)
     let g := g.record (GameEvent.revealed g.turnNumber p #[id] (cause := some cause))
     let (g, _) := g.move id (.hand p) none (cause := some cause)
@@ -1161,6 +1356,10 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       else
         g.draw p 1
     return g.finishResolutionChoice
+  | .discardThenDraw, .decline =>
+    if (g.discardableHandIds p).isEmpty then
+      return (g.draw p 1).finishResolutionChoice
+    else throw "Choose a card to discard"
   | .discardThenDraw, _ => throw "Choose a card to discard"
   | .zemoBoastExile abilityId sourceId, .objects ids =>
     if !gPre.proposalCostPromptStillPayable p gPre.pending then
@@ -1373,6 +1572,12 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       throw s!"Can't sacrifice {g.name o}"
     let g := g.logMsg s!"{(g.player p).name} chooses {g.name o}"
     return (g.beginSacDamagers controller rest (chosen.push (p, id))).finishResolutionChoice
+  | .sacrificeDamager ids rest controller chosen, .decline =>
+    let live := ids.filter fun id =>
+      (g.findObject? id).any fun o => o.isOnBattlefield && g.isCreature o && g.controlledBy o p
+    if live.isEmpty then
+      return (g.beginSacDamagers controller rest chosen).finishResolutionChoice
+    else throw "Choose a creature that dealt combat damage"
   | .sacrificeDamager .., _ => throw "Choose a creature that dealt combat damage"
   | .mayCastInstantSorceryFromHand eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
@@ -1505,6 +1710,12 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       | none => return g.finishResolutionChoice
     | none =>
       return (g.applyHydeMode p none 1 #[Target.permanent id]).finishResolutionChoice
+  | .hydeRemoveCounter ids, .decline =>
+    let live := ids.filter fun id =>
+      (g.findObject? id).any fun o =>
+        o.isOnBattlefield && g.isCreature o && g.controlledBy o p && o.status.hasCounters
+    if live.isEmpty then return g.finishResolutionChoice
+    else throw "Choose a creature with a counter"
   | .hydeRemoveCounter _, _ => throw "Choose a creature with a counter"
   | .widowMayCounter sourceId exiled, .accept =>
     match sourceId.bind g.findObject? with
@@ -1724,9 +1935,9 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       g.withLegalSpecTarget p .anyTarget #[target]
         (fun g tgt => g.dealDamageToTarget tgt amount (source := sourceId.bind g.damageSourceById?))
         sourceId none
-    if let .chooseReplacement .. := g.pending then
+    if g.sbaPaused then
       return (g.chainPendingReplacement
-        (.finishPostStep (.sheHulkAfterDamage p startIdx))).finishResolutionChoice
+        (.finishPostStep (.sheHulkAfterDamage p startIdx sourceId))).finishResolutionChoice
     else
       let g :=
         if g.damageDealtSince startIdx > 0 then
@@ -1917,6 +2128,9 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     if !types.contains sub then throw "Choose an existing creature type"
     let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
     return (g.returnCreaturesNotOfType sub).finishResolutionChoice
+  | .palisadeCreatureType types, .decline =>
+    if types.isEmpty then return g.finishResolutionChoice
+    else throw "Choose a creature type"
   | .palisadeCreatureType _, _ => throw "Choose a creature type"
   | .worldsPutCreatures eligible, .objects ids =>
     if ids.toList.eraseDups.length != ids.size then throw "Choose each card only once"
@@ -1942,19 +2156,20 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     if !chosen.all (ids.contains ·) then throw "That card can't be chosen"
     match purpose with
     | .toHand true =>
-      if !ids.isEmpty && chosen.size != 1 then throw "Choose one card"
+      if max > 0 && !ids.isEmpty && chosen.size != 1 then throw "Choose one card"
     | .amassArmy .. =>
-      if chosen.size != 1 then throw "Choose one Army"
+      if max > 0 && chosen.size != 1 then throw "Choose one Army"
     | _ => pure ()
     let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
     let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
     return (g.finishChooseCards p chosen purpose (cause := cause)).finishResolutionChoice
-  | .chooseCards ids _ purpose, .decline =>
+  | .chooseCards ids max purpose, .decline =>
     match purpose with
     | .toHand true =>
-      if !ids.isEmpty then throw "Choose one card"
+      if max > 0 && !ids.isEmpty then throw "Choose one card"
     | .amassArmy .. =>
-      if !ids.isEmpty then throw "Choose an Army"
+      let liveArmies := ids.filter fun id => (g.findObject? id).isSome
+      if max > 0 && !liveArmies.isEmpty then throw "Choose an Army"
     | _ => pure ()
     let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
     let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
@@ -1963,11 +2178,30 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
   | .blackGatePlayer creature players, .mode idx =>
     let some pid := players[idx]? | throw "No such player"
     return (g.applyBlackGateUnblockable creature pid).finishResolutionChoice
+  | .blackGatePlayer _ players, .decline =>
+    if players.isEmpty then return g.finishResolutionChoice
+    else throw "Choose a player with the most life"
   | .blackGatePlayer .., _ => throw "Choose a player with the most life"
   | .newTargetsForCopies copies, ans =>
     retargetCopyAtSlot g p copies 0 #[] ans
   | .newTargetsForCopySlot copies slotIdx staged, ans =>
     retargetCopyAtSlot g p copies slotIdx staged ans
+  | .chooseEnteringAttackTarget remaining chosen cause, .decline =>
+    let some item := remaining[0]?
+      | return (g.commitEnteringAttackItems chosen cause).finishResolutionChoice
+    if !item.options.isEmpty then
+      throw "Choose a player, planeswalker, or battle to attack (CR 508.4)"
+    let (restAfter, chosen') :=
+      advanceFixedEnteringAttackItems (remaining.extract 1 remaining.size) (chosen.push (item, none))
+    match restAfter[0]? with
+    | some nextItem =>
+      let nextCtrl := nextItem.controller
+      let nextNm := g.enteringAttackItemName nextItem
+      return (g.change (.pending (.resolutionChoice nextCtrl (.chooseEnteringAttackTarget restAfter chosen' cause)))).logMsg
+        s!"{(g.player nextCtrl).name} chooses what {nextNm} enters attacking"
+    | none =>
+      let g := g.commitEnteringAttackItems chosen' cause
+      return g.finishResolutionChoice
   | .chooseEnteringAttackTarget remaining chosen cause, ans =>
     let some item := remaining[0]?
       | return (g.commitEnteringAttackItems chosen cause).finishResolutionChoice
@@ -2071,7 +2305,8 @@ accepting only Sphinx's Approach and declining other optional actions. -/
 def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : Action :=
   match choice with
   | .discardFromRevealedHand victim permanentOnly =>
-    .choosePermanents ((g.revealedHandChoices victim permanentOnly).extract 0 1)
+    let cands := g.revealedHandChoices victim permanentOnly
+    if cands.isEmpty then .decline else .choosePermanents (cands.extract 0 1)
   | .mayWheel .. => .decline
   | .maySacrificePlaneswalker => .decline
   | .topOrBottomDamage .. => .decline
@@ -2080,7 +2315,9 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
     let picks := (g.outsideCards p).foldl (fun (acc : Array GameObject) o =>
       if acc.size < 2 && !acc.any (fun a => g.name a == g.name o) then acc.push o else acc) #[]
     if picks.size < 2 then .decline else .choosePermanents (picks.map (·.id))
-  | .extrapolatePick _ ids => .choosePermanents (ids.extract 0 1)
+  | .extrapolatePick _ ids =>
+    let live := ids.filter fun id => (g.findObject? id).isSome
+    if live.isEmpty then .decline else .choosePermanents (live.extract 0 1)
   | .mayPutMilledPermanent ids _ =>
     let valid := ids.filter fun id => (g.findObject? id).any (fun o => isPublicZone o.zone)
     if valid.isEmpty then .decline else .choosePermanents (valid.extract 0 1)
@@ -2088,12 +2325,15 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
   | .mayPayThen n .. =>
     if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then .accept else .decline
   | .mayDiscardThen .. => .decline
-  | .discardThen .. => .choosePermanents ((g.discardableHandIds p).extract 0 1)
+  | .discardThen .. =>
+    let hand := g.discardableHandIds p
+    if hand.isEmpty then .decline else .choosePermanents (hand.extract 0 1)
   | .discardThenStun n _ => .choosePermanents ((g.discardableHandIds p).extract 0 n)
   | .maySacrificeThen .. => .decline
   | .mayMovePlusOne _ => .decline
   | .exileFromRevealedHand victim _ =>
-    .choosePermanents ((g.revealedHandChoices victim false).extract 0 1)
+    let cands := g.revealedHandChoices victim false
+    if cands.isEmpty then .decline else .choosePermanents (cands.extract 0 1)
   | .castCopiesFree .. => .decline
   | .allianceMode _ available =>
     match available[0]? with
@@ -2126,10 +2366,14 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
     | some m => .chooseMode m
     | none => .decline
   | .stackHydeMode _ => .chooseMode 0
-  | .chooseKeyword .. => .chooseMode 0
+  | .chooseKeyword _ options =>
+    if options.isEmpty then .decline else .chooseMode 0
   | .sacrificeCreatureEach .. =>
-    .choosePermanents (((g.creaturesControlledBy p).map (·.id)).extract 0 1)
-  | .discardTwo .. => .choosePermanents ((g.discardableHandIds p).extract 0 2)
+    let cands := (g.creaturesControlledBy p).map (·.id)
+    if cands.isEmpty then .decline else .choosePermanents (cands.extract 0 1)
+  | .discardTwo .. =>
+    let hand := g.discardableHandIds p
+    if hand.size < 2 then .decline else .choosePermanents (hand.extract 0 2)
   | .mayMoveAllCounters .. => .accept
   | .crew _ vehicleId n =>
     let tapSrc := g.proposedSpell.any (·.tapSource)
@@ -2180,8 +2424,27 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
           (discardOrExileHandSource := discSrc) with
       | some chosen => .choosePermanents chosen
       | none => .decline
+  | .chooseCostCounterKinds sid? picks paid tid kinds remIds chosen nextInstr? =>
+    let validIdx? := (List.range kinds.size).find? fun idx =>
+      let k := kinds[idx]!
+      let usedK := (chosen.filter (fun (id', k') => id' == tid && k' == k)).size
+      (g.findObject? tid).any (fun o => o.status.counterCount k > usedK)
+    match nextInstr? with
+    | some _ =>
+      match validIdx? with
+      | some idx => .chooseMode idx
+      | none => .decline
+    | none =>
+      if !g.proposalCostPromptStillPayable p (.resolutionChoice p
+          (.chooseCostCounterKinds sid? picks paid tid kinds remIds chosen none)) then
+        .decline
+      else
+        match validIdx? with
+        | some idx => .chooseMode idx
+        | none => .decline
   | .mayPayPickThen .. => .decline
-  | .chooseCreatureType _ => .chooseMode 0
+  | .chooseCreatureType types =>
+    if types.isEmpty then .decline else .chooseMode 0
   | .maySacrificeAnotherCreatureForPower _ => .decline
   | .maySacrificeAnotherForDrawTreasure _ => .decline
   | .maySacrificeThese _ _ => .decline
@@ -2192,7 +2455,10 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
       match g.findObject? id, g.findObject? hostId with
       | some eq, some host => g.canAttachEquipmentTo eq host
       | _, _ => false)
-  | .sacrificeLeastPower ids => .choosePermanents (ids.extract 0 1)
+  | .sacrificeLeastPower ids =>
+    let live := ids.filter fun id =>
+      (g.findObject? id).any fun o => o.isOnBattlefield && g.controlledBy o p
+    if live.isEmpty then .decline else .choosePermanents (live.extract 0 1)
   | .addManaColors .. => .chooseMode 0
   | .mayPayExtort _ =>
     if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } then .accept else .decline
@@ -2200,36 +2466,42 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
   | .mayCreateTokens .. => .accept
   | .mayBecomeBasePT .. => .accept
   | .mayRevealToHand _ eligible _ =>
-    if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 1)
+    let live := eligible.filter fun id => (g.findObject? id).isSome
+    if live.isEmpty then .decline else .choosePermanents (live.extract 0 1)
   | .nickFuryPut _ _ => .decline
   | .nickFuryMayTransform _ _ => .decline
   | .orderLibraryBottom ids => .choosePermanents ids
   | .chooseCards ids max purpose =>
     match purpose with
     | .amassArmy .. =>
-      let best :=
-        ids.foldl (fun best id =>
-          match best, g.findObject? id with
-          | none, _ => some id
-          | some b, some o =>
-            match g.findObject? b with
-            | some prev => if o.timestamp ≥ prev.timestamp then some id else some b
-            | none => some id
-          | some b, none => some b) none
-      match best with
-      | some id => .choosePermanents #[id]
-      | none => .decline
+      if max == 0 then .decline
+      else
+        let best :=
+          ids.foldl (fun best id =>
+            match best, g.findObject? id with
+            | none, some _ => some id
+            | none, none => none
+            | some b, some o =>
+              match g.findObject? b with
+              | some prev => if o.timestamp ≥ prev.timestamp then some id else some b
+              | none => some id
+            | some b, none => some b) none
+        match best with
+        | some id => .choosePermanents #[id]
+        | none => .decline
     | .toHand true =>
-      if ids.isEmpty then .decline else .choosePermanents (ids.extract 0 1)
+      if max == 0 || ids.isEmpty then .decline else .choosePermanents (ids.extract 0 1)
     | .toHand false => .choosePermanents (ids.extract 0 max)
     | .creaturesToBattlefield | .landsTappedGainLife _ => .choosePermanents (ids.extract 0 max)
     | .keepDestroyRest =>
       let yours := ids.filter (fun id => (g.findObject? id).any (g.controlledBy · p))
       let pick := if yours.isEmpty then ids else yours
       .choosePermanents (pick.extract 0 max)
-  | .blackGatePlayer _ _ => .chooseMode 0
+  | .blackGatePlayer _ players =>
+    if players.isEmpty then .decline else .chooseMode 0
   | .sacrificeNontokenEach .. =>
-    .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
+    let cands := ((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id)
+    if cands.isEmpty then .decline else .choosePermanents (cands.extract 0 1)
   | .mayPayManaForReflexive cost maxTimes _ _ =>
     if maxTimes > 0 && (g.player p).manaPool.canPay { symbols := cost } then .accept else .decline
   | .mayTapSourceThen _ sourceId =>
@@ -2245,7 +2517,9 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
     match [1, 0, 2].find? ok with
     | some m => .chooseMode m
     | none => .decline
-  | .discardThenDraw => .choosePermanents ((g.discardableHandIds p).extract 0 1)
+  | .discardThenDraw =>
+    let hand := g.discardableHandIds p
+    if hand.isEmpty then .decline else .choosePermanents (hand.extract 0 1)
   | .mayCastCascade cardId _ =>
     if g.cantCastSpellsThisTurn p || g.splitSecondOnStack || g.combatLocksNonManaAbilities ||
         g.opponentsCantCastOnActiveTurn p then
@@ -2284,11 +2558,18 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
   | .mayCastCopy _ => .decline
   | .mayDiscardHandBalin _ => .decline
   | .mayDiscardHandDrawFixed _ => .decline
-  | .sacrificeDamager ids .. => .choosePermanents (ids.extract 0 1)
+  | .sacrificeDamager ids .. =>
+    let live := ids.filter fun id =>
+      (g.findObject? id).any fun o => o.isOnBattlefield && g.isCreature o && g.controlledBy o p
+    if live.isEmpty then .decline else .choosePermanents (live.extract 0 1)
   | .mayCastInstantSorceryFromHand _ => .decline
   | .mayCastUpToFromExile _ _ => .decline
   | .hydeMode _ => .chooseMode 0
-  | .hydeRemoveCounter ids => .choosePermanents (ids.extract 0 1)
+  | .hydeRemoveCounter ids =>
+    let live := ids.filter fun id =>
+      (g.findObject? id).any fun o =>
+        o.isOnBattlefield && g.isCreature o && g.controlledBy o p && o.status.hasCounters
+    if live.isEmpty then .decline else .choosePermanents (live.extract 0 1)
   | .sheHulkMayDamage .. => .decline
   | .widowMayCounter .. => .decline
   | .ultronMayPay _ => .decline
@@ -2472,7 +2753,8 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
   | .newTargetsForCopySlot _ _ _ => .decline
   | .riddlesSplit looked => .choosePermanents looked
   | .riddlesChoosePile .. => .accept
-  | .palisadeCreatureType _ => .chooseMode 0
+  | .palisadeCreatureType types =>
+    if types.isEmpty then .decline else .chooseMode 0
   | .worldsPutCreatures .. => .decline
   | .revealPutCreatures .. => .decline
   | .zemoBoastExile _ sourceId =>
@@ -2483,7 +2765,10 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
     let cands := (g.player p).graveyard.filter (fun id =>
       (g.findObject? id).any (fun card => isDiscardableCard card && (g.colors card).contains col))
     if g.canPayZemoBoast p cands col then .choosePermanents cands else .decline
-  | .chooseEnteringAttackTarget .. => .chooseMode 0
+  | .chooseEnteringAttackTarget remaining .. =>
+    match remaining[0]? with
+    | some item => if item.options.isEmpty then .decline else .chooseMode 0
+    | none => .decline
   | .chooseTokenCopyObject ids .. =>
     match ids[0]? with
     | some oid => .choosePermanents #[oid]

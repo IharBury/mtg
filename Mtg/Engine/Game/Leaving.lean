@@ -11,13 +11,6 @@ leaves a multiplayer game, and emptying mana pools (CR 500.5).
 namespace Mtg.Engine
 namespace Game
 
-/-- True while a CR 704.3 state-based action sweep is paused awaiting a
-replacement or legend-rule choice. -/
-def sbaPaused (g : Game) : Bool :=
-  match g.pending with
-  | .chooseReplacement .. | .chooseLegend .. => true
-  | _ => false
-
 /-- True when a permanent or command-zone object's static ability states `p`
 can't win the game (CR 104.2b / 114.4). -/
 def playerCantWin (g : Game) (p : PlayerId) : Bool :=
@@ -261,6 +254,7 @@ private def interpWaitEmitsPfe (idx : Nat) (w : InterpState) : Bool :=
     | some (.afterMoveLoop _ _ _ _ _ (some fi))
     | some (.afterCounterOpLoop _ _ _ (some fi))
     | some (.afterCopyAndCastExileLoop _ _ _ _ _ (some fi))
+    | some (.afterRevealUntilExileLoop _ _ _ _ _ _ (some fi))
     | some (.afterDamagePermanentsLoop _ _ _ _ _ fi _)
     | some (.afterDividedDamageLoop _ _ _ fi _)
     | some (.afterMixedDamageLoop _ _ _ fi _ _ _ _) => fi ≤ idx
@@ -278,7 +272,7 @@ private def contEmitsPfeBeforeBoundary (idx : Nat) : PendingReplacement → Bool
   | .leavePlayersWhoLost _ _ _ _ (some fi)
   | .finishConcede _ _ _ _ _ _ _ (some fi)
   | .concedePlayersLoop _ _ _ _ _ _ _ _ _ _ (some fi)
-  | .payCostPickItems _ _ _ _ _ (some fi)
+  | .payCostPickItems _ _ _ _ _ (some fi) _
   | .finishActivationExtraCosts _ _ _ _ _ _ _ _ _ _ _ (some fi)
   | .finishActivateManaAbilityPicks _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (some fi) _
   | .finishPostStep (.resolveCascadeLoop _ _ _ _ _ (some fi))
@@ -1051,7 +1045,7 @@ triggers are evaluated from the recorded event batch in `matchTriggers`. -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (entersWith := false) (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement (.addPlusOnePlusOneTo o.id n entersWith byPlayer cause)
   else if n == 0 then g
   else
@@ -1292,14 +1286,14 @@ def splitAfterCloseBatchFor? (target : BatchId) :
       some (pre, some (.seq rem b))
     | some (pre, none) =>
       match b with
-      | .finishLinkedExileMove ids =>
-        some (.seq pre (.finishLinkedExileMove ids), none)
+      | fl@(.finishLinkedExileMove ..) =>
+        some (.seq pre fl, none)
       | .phaseOutPermanentsLoop #[] c ps s true =>
         some (.seq pre (.phaseOutPermanentsLoop #[] c ps s true), none)
       | .phaseInControlledLoop #[] c s true allowDirectSingle =>
         some (.seq pre (.phaseInControlledLoop #[] c s true allowDirectSingle), none)
-      | .seq (.finishLinkedExileMove ids) rest =>
-        some (.seq pre (.finishLinkedExileMove ids), some rest)
+      | .seq (fl@(.finishLinkedExileMove ..)) rest =>
+        some (.seq pre fl, some rest)
       | .seq (.phaseOutPermanentsLoop #[] c ps s true) rest =>
         some (.seq pre (.phaseOutPermanentsLoop #[] c ps s true), some rest)
       | .seq (.phaseInControlledLoop #[] c s true allowDirectSingle) rest =>
@@ -1449,6 +1443,7 @@ def isProposalPromptFor (caster : PlayerId) : Pending → Bool
   | .chooseTeamwork q | .chooseTeamworkCreatures q _
   | .sacrificePermanent q _ | .discardForAdditionalCost q
   | .resolutionChoice q (.costPicks ..) | .resolutionChoice q (.crew ..)
+  | .resolutionChoice q (.chooseCostCounterKinds _ _ _ _ _ _ _ none)
   | .resolutionChoice q (.zemoBoastExile ..) => q == caster
   | _ => false
 
@@ -2240,7 +2235,8 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       (g, .none)
   | .resolutionChoice q choice =>
     match choice with
-    | .costPicks .. | .crew .. | .zemoBoastExile .. =>
+    | .costPicks .. | .crew .. | .zemoBoastExile ..
+    | .chooseCostCounterKinds _ _ _ _ _ _ _ none =>
       if q == p || abortedProp then
         (clearPendingAnd g clearProp, .none)
       else
@@ -2248,6 +2244,17 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           g.withOuterContStashed fun g =>
             (clearPending g).chainPendingReplacement (.finishPostStep (.resumeProposalCostAfterLeave q pending))
         (g, .none)
+    | .chooseCostCounterKinds _ _ _ tid _ remIds chosen (some _) =>
+      if q == p then
+        let g := if clearProp.isEmpty then g else g.changes clearProp
+        let g := declineInterpChoice (clearPending g)
+        (g, .none)
+      else
+        let allIds := (chosen.map Prod.fst).push tid ++ remIds
+        if !allIds.all (fun id => (g.findObject? id).isSome) then
+          let g := declineInterpChoice (clearPending g)
+          (g, .none)
+        else (g, pending)
     | .mayCastUpToFromExile ids left =>
       if q == p then
         let g := g.changes (#[.pendingMayCastFromExile none] ++ clearProp)

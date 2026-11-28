@@ -140,7 +140,7 @@ end
 def draw (g : Game) (p : PlayerId) (n : Nat := 1)
     (cause : Option EventCause := none) : Game :=
   if !g.stillInGame p then g
-  else if let .chooseReplacement .. := g.pending then
+  else if g.sbaPaused then
     if n == 0 then g else g.chainPendingReplacement (.draw p n cause)
   else
   let (g0, cause?) : Game × Option EventCause :=
@@ -190,7 +190,7 @@ def finishBeginRecruit (g : Game) (p : PlayerId) : Game :=
 1/1 white Human Soldier (the Recruit keyword action). -/
 def beginRecruit (g : Game) (p : PlayerId) : Game :=
   let g := g.draw p 1
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement (.finishBeginRecruit p)
   else
     g.finishBeginRecruit p
@@ -205,7 +205,7 @@ def finishReturnStackSpell (g : Game) (spellId : ObjectId) (owner : PlayerId)
 
 /-- Return a spell on the stack to its owner's hand. -/
 def returnStackSpell (g : Game) (spellId : ObjectId) : Game :=
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     let owner := (g.findObject? spellId).map (·.owner) |>.getD g.activePlayer
     let name := (g.findObject? spellId).map g.name |>.getD ""
     g.chainPendingReplacement (.returnStackSpell spellId owner name false)
@@ -219,7 +219,7 @@ def returnStackSpell (g : Game) (spellId : ObjectId) : Game :=
       let name := g.name o
       let owner := o.owner
       let (g, _) := g.move spellId (.hand owner) none
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused then
         g.chainPendingReplacement (.returnStackSpell spellId owner name true)
       else
         g.finishReturnStackSpell spellId owner name
@@ -276,10 +276,11 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
     g.chainPendingReplacement
       (.finishPostStep (.moveIdsInOrderLoop ids dest log cause placedCount prevMoved (some loopFromIdx)))
   else
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let placedCount :=
     match prevMoved with
     | some (prevId, z) =>
@@ -289,7 +290,7 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
   if match dest with
     | .library p | .hand p | .graveyard p | .outside p => !g.stillInGame p
     | _ => false then
-    let g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    let g := emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
     if !log.isEmpty && placedCount > 0 then g.logMsg log else g
   else
   match dest with
@@ -299,7 +300,7 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
       let mut placed := placedCount
       for i in [0:ids.size] do
         if !g.stillInGame p then
-          g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+          g := emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
           if !log.isEmpty && placed > 0 then
             g := g.logMsg log
           return g
@@ -318,7 +319,7 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
           return g
         if (g.followMovedToZone? id (· == .library p)).isSome then
           placed := placed + 1
-      g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+      g := emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
       if !log.isEmpty && (placed > 0 || (ids.isEmpty && prevMoved.isNone)) then
         g := g.logMsg log
       return g
@@ -330,7 +331,7 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
         if match dest with
           | .hand p | .graveyard p | .outside p => !g.stillInGame p
           | _ => false then
-          g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+          g := emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
           if !log.isEmpty && placed > 0 then
             g := g.logMsg log
           return g
@@ -344,7 +345,7 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
           return g
         if (g.followMovedToZone? id (· == dest)).isSome then
           placed := placed + 1
-      g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+      g := emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
       if !log.isEmpty && (placed > 0 || (ids.isEmpty && prevMoved.isNone)) then
         g := g.logMsg log
       return g

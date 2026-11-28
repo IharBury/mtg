@@ -104,6 +104,17 @@ def boimlerOnce : Game :=
   let ogre := namedPermanent g "Gray Ogre"
   let g := g.addCounters ogre .plusOnePlusOne 1
   (namedPermanent g "Gray Ogre").status.plusOnePlusOne == 3
+#guard
+  -- PR #722 review: Brad Boimler's replacement only affects permanents you control,
+  -- never spells on the stack (even spells controlled by you).
+  let g := insertObject boimlerOnce grizzlyBears ⟨0⟩ (.hand ⟨0⟩) none
+  let g := withGreenMana g ⟨0⟩ 2
+  let bearCard := (g.objects.find? (fun o => o.name == "Grizzly Bears" && o.zone == .hand ⟨0⟩)).get!
+  let g := mustApply g ⟨0⟩ (.cast bearCard.id)
+  let g := mustApply g ⟨0⟩ .pay
+  let stackBear := (g.objects.find? (fun o => o.name == "Grizzly Bears" && o.zone == .stack)).get!
+  let g := g.addCounters stackBear .charge 1
+  (g.object! stackBear.id).status.charge == 1
 
 /-!
 ## 1063–1066 — Facing a dilemma (CR 700.17)
@@ -407,6 +418,28 @@ def dilemmaCountered : Game :=
   gNext.stack.isEmpty &&
   gNext.log.any (fun s => mentions s "all modes have been chosen")
 
+-- PR #722 review: when unchosen modes remain (Mode 0 requires a target creature)
+-- and none can legally be chosen (no creatures on the battlefield), log CR 603.3c
+-- "no legal mode can be chosen" instead of "all modes have been chosen" and leave
+-- Mode 0 unchosen.
+#guard
+  let mandatoryUnused : CardDef := fromOracle [
+    "Mandatory Unused Test",
+    "{1}{U}",
+    "Enchantment",
+    "At the beginning of your upkeep, choose one that hasn't been chosen —",
+    "• Destroy target creature.",
+    "• Draw a card."
+  ]
+  let g := addPermanent trkRulingMain mandatoryUnused ⟨0⟩ ⟨0⟩
+  let ench := namedPermanent g "Mandatory Unused Test"
+  let g := g.record (GameEvent.triggerModeChosen g.turnNumber ench.id 1 (lifetime := true))
+  let gNext := toNextUpkeep (toNextUpkeep g)
+  gNext.stack.isEmpty &&
+  !(gNext.modesChosenEver ench.id).contains 0 &&
+  gNext.log.any (fun s => mentions s "no legal mode can be chosen") &&
+  !gNext.log.any (fun s => mentions s "all modes have been chosen")
+
 /-!
 ## 1158 — Lieutenant Commander Data
 -/
@@ -432,6 +465,69 @@ def dilemmaCountered : Game :=
   (namedPermanent g "Gray Ogre").status.minusOneMinusOne == 0 &&
   (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 0 &&
   (g.player ⟨0⟩).hand.size == h0 + 1
+
+-- PR #722 review: when a chosen creature has multiple counter kinds and more
+-- counters than are being removed from it, the player chooses which counter
+-- kinds to remove (both for same-creature and multi-creature splits).
+#guard
+  let g := addPermanent trkRulingMain lieutenantCommanderData ⟨0⟩ ⟨0⟩
+  let g := withBlueMana g ⟨0⟩ 1
+  let data := namedPermanent g "Lieutenant Commander Data"
+  let g := (g.addCounters data .plusOnePlusOne 2).addCounters data .stun 2
+  let h0 := (g.player ⟨0⟩).hand.size
+  let g := mustApply g ⟨0⟩ (.activate data.id 0)
+  let g := mustApply g ⟨0⟩ .pay
+  let gPrompt := mustApply g ⟨0⟩ (.choosePermanents #[data.id, data.id, data.id])
+  let promptedKinds :=
+    match gPrompt.pending with
+    | .resolutionChoice ⟨0⟩ (.chooseCostCounterKinds _ _ true tid kinds _ _ none) =>
+      tid == data.id && kinds == #[.plusOnePlusOne, .stun]
+    | _ => false
+  -- Mana was already paid, so cancelling during counter-kind choice is rejected.
+  let cantCancel := rejects gPrompt ⟨0⟩ .decline
+  -- Path A: remove two +1/+1 counters (auto-removing 1 stun counter), leaving 1 stun.
+  let gA := passBoth (mustApply (mustApply gPrompt ⟨0⟩ (.chooseMode 0)) ⟨0⟩ (.chooseMode 0))
+  let okA :=
+    (namedPermanent gA "Lieutenant Commander Data").status.plusOnePlusOne == 0 &&
+    (namedPermanent gA "Lieutenant Commander Data").status.stun == 1 &&
+    (gA.player ⟨0⟩).hand.size == h0 + 1
+  -- Path B: remove two stun counters (auto-removing 1 +1/+1 counter), leaving 1 +1/+1.
+  let gB := passBoth (mustApply (mustApply gPrompt ⟨0⟩ (.chooseMode 1)) ⟨0⟩ (.chooseMode 1))
+  let okB :=
+    (namedPermanent gB "Lieutenant Commander Data").status.plusOnePlusOne == 1 &&
+    (namedPermanent gB "Lieutenant Commander Data").status.stun == 0 &&
+    (gB.player ⟨0⟩).hand.size == h0 + 1
+  promptedKinds && cantCancel && okA && okB
+#guard
+  -- Mixed 3-creature split: only the ambiguous creature (Data with +1/+1 + stun)
+  -- prompts for a counter kind; single-kind creatures auto-resolve.
+  let g := addPermanent trkRulingMain lieutenantCommanderData ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := withBlueMana g ⟨0⟩ 1
+  let data := namedPermanent g "Lieutenant Commander Data"
+  let ogre := namedPermanent g "Gray Ogre"
+  let bear := namedPermanent g "Grizzly Bears"
+  let g := (g.addCounters data .plusOnePlusOne 1).addCounters data .stun 1
+  let g := g.addCounters ogre .minusOneMinusOne 1
+  let g := g.addCounters bear .plusOnePlusOne 1
+  let h0 := (g.player ⟨0⟩).hand.size
+  let g := mustApply g ⟨0⟩ (.activate data.id 0)
+  let g := mustApply g ⟨0⟩ .pay
+  let gPrompt := mustApply g ⟨0⟩ (.choosePermanents #[data.id, ogre.id, bear.id])
+  let promptedOnce :=
+    match gPrompt.pending with
+    | .resolutionChoice ⟨0⟩ (.chooseCostCounterKinds _ _ true tid kinds rem _ none) =>
+      tid == data.id && kinds == #[.plusOnePlusOne, .stun] && rem == #[ogre.id, bear.id]
+    | _ => false
+  -- Choose stun on Data; ogre (-1/-1) and bear (+1/+1) auto-remove with no extra prompts.
+  let gDone := passBoth (mustApply gPrompt ⟨0⟩ (.chooseMode 1))
+  promptedOnce &&
+  (namedPermanent gDone "Lieutenant Commander Data").status.plusOnePlusOne == 1 &&
+  (namedPermanent gDone "Lieutenant Commander Data").status.stun == 0 &&
+  (namedPermanent gDone "Gray Ogre").status.minusOneMinusOne == 0 &&
+  (namedPermanent gDone "Grizzly Bears").status.plusOnePlusOne == 0 &&
+  (gDone.player ⟨0⟩).hand.size == h0 + 1
 
 /-!
 ## 1165, 1167, 1168 — Nyota Uhura, Communications

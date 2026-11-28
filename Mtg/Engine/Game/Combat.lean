@@ -404,10 +404,11 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0)
   let combatCause := some (EventCause.turnBased (.dealCombatDamage fs))
   let isOuterCall := g.currentBatch.isNone && !isResume
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let steps := buildCombatDamageSteps g.assignedCombatDamage
   let g := g.withBatch combatCause fun g => Id.run do
     let mut g := g
@@ -440,7 +441,7 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0)
             (source := some srcEvent) (sourceObj := some src)
             (replaced := some rep) (consumeOrder := true) (cause := rep.cause)
             (deferPlayFromExileLogs := true)
-          if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+          if g.sbaPaused then
             return g.chainPendingReplacement (.dealAssignedCombatDamage (k + 1) (some loopFromIdx))
       | .toPlayerOrPw srcId amt =>
         if let some src := (g.findObject? srcId).filter (·.isOnBattlefield) then
@@ -462,7 +463,7 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0)
                   (source := some srcEvent) (sourceObj := some src)
                   (replaced := some rep) (consumeOrder := true) (cause := rep.cause)
                   (deferPlayFromExileLogs := true)
-                if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+                if g.sbaPaused then
                   return g.chainPendingReplacement (.dealAssignedCombatDamage (k + 1) (some loopFromIdx))
             | none => pure ()
           else if g.isLivingOpponentOf ((g.controllerOf src).getD g.activePlayer) defn then
@@ -530,11 +531,11 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0)
           | some pid =>
             if g.stillInGame pid then
               g := g.gainLife pid totalDealt (cause := combatCause)
-              if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+              if g.sbaPaused then
                 return g.chainPendingReplacement (.dealAssignedCombatDamage (k + 1) (some loopFromIdx))
           | none => pure ()
     g := g.change (.pending .none)
-    return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    return emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
   if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     if isOuterCall then
       let g := if fs then g.chainPendingReplacement .addExtraCombatDamageStep else g
